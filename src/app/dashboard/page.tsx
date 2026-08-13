@@ -22,7 +22,14 @@ export default async function DashboardPage() {
   const todayStr = now.toISOString().slice(0, 10)
   const monthStr = now.toISOString().slice(0, 7)
 
+  const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 6)
+  const weekAgoStr = weekAgo.toISOString().slice(0, 10)
+
   const todayCusts = safe.filter(c => c.subscription_start?.slice(0, 10) === todayStr)
+  const weekCusts = safe.filter(c => {
+    const d = c.subscription_start?.slice(0, 10)
+    return d && d >= weekAgoStr && d <= todayStr
+  })
   const monthCusts = safe.filter(c => c.subscription_start?.slice(0, 7) === monthStr)
   const active = safe.filter(c => subStatus(c.subscription_end) === 'active')
   const expiring = safe.filter(c => {
@@ -64,6 +71,8 @@ export default async function DashboardPage() {
       breakdown={breakdown}
       recent={recent}
       todayCustomers={todayCusts}
+      weekCustomers={weekCusts}
+      monthCustomers={monthCusts}
     />
   )
 }

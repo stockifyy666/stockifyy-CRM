@@ -16,15 +16,17 @@ interface Props {
   breakdown: { type: string; count: number }[]
   recent: any[]
   todayCustomers: any[]
+  weekCustomers: any[]
+  monthCustomers: any[]
 }
 
-async function downloadTodayExcel(customers: any[]) {
+async function exportExcel(customers: any[], label: string, filename: string) {
   const { utils, writeFile } = await import('xlsx')
-  const today = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })
 
   const rows = customers.map((c, i) => ({
     '#': i + 1,
     'Customer Name': c.name,
+    'Client Code': c.client_code ?? '—',
     'Mobile': c.mobile,
     'Subscription Type': c.subscription_type,
     'Amount (Rs)': c.amount,
@@ -39,26 +41,24 @@ async function downloadTodayExcel(customers: any[]) {
 
   const ws = utils.json_to_sheet(rows)
 
-  // Attach hyperlinks to screenshot cells (row 2 onward, last column = L)
   customers.forEach((c, i) => {
     if (!c.screenshot_url) return
-    const cellRef = utils.encode_cell({ r: i + 1, c: 11 }) // col 11 = Screenshot
+    const cellRef = utils.encode_cell({ r: i + 1, c: 12 }) // col 12 = Screenshot (shifted by client_code)
     if (!ws[cellRef]) return
     ws[cellRef].l = { Target: c.screenshot_url, Tooltip: 'Open payment screenshot' }
     ws[cellRef].s = { font: { color: { rgb: '0563C1' }, underline: true } }
   })
 
-  // Column widths
   ws['!cols'] = [
-    { wch: 4 }, { wch: 25 }, { wch: 16 }, { wch: 28 },
+    { wch: 4 }, { wch: 25 }, { wch: 14 }, { wch: 16 }, { wch: 28 },
     { wch: 14 }, { wch: 14 }, { wch: 16 },
     { wch: 22 }, { wch: 22 }, { wch: 18 }, { wch: 30 },
     { wch: 18 },
   ]
 
   const wb = utils.book_new()
-  utils.book_append_sheet(wb, ws, today)
-  writeFile(wb, `Stockifyy-CRM-${today}.xlsx`)
+  utils.book_append_sheet(wb, ws, label.slice(0, 31))
+  writeFile(wb, filename)
 }
 
 const TYPE_PILL: Record<string, string> = {
@@ -75,7 +75,7 @@ const STATUS_PILL: Record<string, string> = {
   expired: 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300',
 }
 
-export default function DashboardClient({ metrics, chartData, breakdown, recent, todayCustomers }: Props) {
+export default function DashboardClient({ metrics, chartData, breakdown, recent, todayCustomers, weekCustomers, monthCustomers }: Props) {
   const now = new Date()
   const maxAmt = Math.max(...chartData.map(d => d.amount), 1)
 
@@ -96,20 +96,32 @@ export default function DashboardClient({ metrics, chartData, breakdown, recent,
             {now.toLocaleDateString('en-PK', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         </div>
-        <button
-          onClick={() => downloadTodayExcel(todayCustomers)}
-          disabled={todayCustomers.length === 0}
-          className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors shadow-sm flex-shrink-0"
-        >
-          <Download size={15} />
-          <span className="hidden sm:inline">Download Today</span>
-          <span className="sm:hidden">Excel</span>
-          {todayCustomers.length > 0 && (
-            <span className="bg-white/20 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
-              {todayCustomers.length}
-            </span>
-          )}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {[
+            { label: 'Today', customers: todayCustomers, period: 'today' },
+            { label: 'This Week', customers: weekCustomers, period: 'week' },
+            { label: 'This Month', customers: monthCustomers, period: 'month' },
+          ].map(({ label, customers, period }) => {
+            const now = new Date()
+            const dateStr = now.toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })
+            return (
+              <button
+                key={period}
+                onClick={() => exportExcel(customers, label, `Stockifyy-${period}-${dateStr}.xlsx`)}
+                disabled={customers.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors shadow-sm flex-shrink-0"
+              >
+                <Download size={13} />
+                <span>{label}</span>
+                {customers.length > 0 && (
+                  <span className="bg-white/20 text-white text-[10px] font-bold px-1 py-0.5 rounded-full leading-none">
+                    {customers.length}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {/* Metrics — 2 cols mobile, 4 desktop */}

@@ -145,6 +145,7 @@ export default function CustomersClient({ customers: initial, profile }: { custo
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div>
                     <div className="font-semibold text-foreground">{c.name}</div>
+                    {c.client_code && <div className="text-xs font-mono text-primary">{c.client_code}</div>}
                     <div className="text-sm text-muted-foreground">{c.mobile}</div>
                   </div>
                   <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${STATUS_PILL[st]}`}>{STATUS_LABEL[st]}</span>
@@ -212,7 +213,7 @@ export default function CustomersClient({ customers: initial, profile }: { custo
                     <td className="px-4 py-3 text-xs text-muted-foreground tabular-nums whitespace-nowrap">{i + 1}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div className="font-semibold text-foreground text-sm">{c.name}</div>
-                      <div className="text-xs text-muted-foreground">{fmt(c.created_at)}</div>
+                      <div className="text-xs text-muted-foreground">{c.client_code ?? fmt(c.created_at)}</div>
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{c.mobile}</td>
                     <td className="px-4 py-3 whitespace-nowrap">

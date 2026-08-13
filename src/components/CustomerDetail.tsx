@@ -82,6 +82,7 @@ export default function CustomerDetail({ customer: c, profile, onClose, onEdit, 
           {/* Details grid */}
           <div className="grid grid-cols-2 gap-x-8 gap-y-4">
             <DI label="Full Name"><span className="font-semibold text-foreground">{c.name}</span></DI>
+            <DI label="Client Code"><span className="font-mono text-foreground">{c.client_code ?? '—'}</span></DI>
             <DI label="Mobile Number"><span className="text-foreground">{c.mobile}</span></DI>
             <DI label="Subscription Type">
               <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${TYPE_PILL[c.subscription_type] ?? 'bg-muted text-muted-foreground'}`}>{c.subscription_type}</span>

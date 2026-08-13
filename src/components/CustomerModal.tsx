@@ -27,6 +27,7 @@ export default function CustomerModal({ customer, onClose, onSave }: Props) {
 
   const [form, setForm] = useState({
     name: customer?.name ?? '',
+    client_code: customer?.client_code ?? '',
     mobile: customer?.mobile ?? '',
     subscription_type: customer?.subscription_type ?? '',
     amount: customer?.amount?.toString() ?? '',
@@ -38,6 +39,8 @@ export default function CustomerModal({ customer, onClose, onSave }: Props) {
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })) }
 
+  const isCourse = form.subscription_type === 'Technical Analysis Course'
+
   function handleFile(f: File) {
     if (f.size > 5 * 1024 * 1024) return
     setFile(f)
@@ -48,16 +51,18 @@ export default function CustomerModal({ customer, onClose, onSave }: Props) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.name || !form.mobile || !form.subscription_type || !form.amount || !form.subscription_start || !form.subscription_end) return
+    if (!form.name || !form.mobile || !form.subscription_type || !form.amount) return
+    if (!isCourse && (!form.subscription_start || !form.subscription_end)) return
     setSaving(true)
     await onSave({
       name: form.name.trim(),
+      client_code: form.client_code.trim() || null,
       mobile: form.mobile.trim(),
       subscription_type: form.subscription_type as any,
       amount: parseFloat(form.amount),
       discount: form.discount ? parseFloat(form.discount) : null,
-      subscription_start: new Date(form.subscription_start).toISOString(),
-      subscription_end: new Date(form.subscription_end).toISOString(),
+      subscription_start: isCourse ? null : new Date(form.subscription_start).toISOString(),
+      subscription_end: isCourse ? null : new Date(form.subscription_end).toISOString(),
       notes: form.notes.trim() || null,
       screenshot_url: file ? undefined : (customer?.screenshot_url ?? null),
     }, file)
@@ -65,7 +70,7 @@ export default function CustomerModal({ customer, onClose, onSave }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-6 overflow-y-auto">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 sm:p-6 overflow-y-auto">
       <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl relative mt-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2 className="text-lg font-bold text-foreground tracking-tight">{isEdit ? 'Edit Customer' : 'Add Customer'}</h2>
@@ -79,8 +84,11 @@ export default function CustomerModal({ customer, onClose, onSave }: Props) {
             <Field label="Full Name" required>
               <input className={INPUT} value={form.name} onChange={e => set('name', e.target.value)} placeholder="Customer full name" required />
             </Field>
+            <Field label="Client Code">
+              <input className={INPUT} value={form.client_code} onChange={e => set('client_code', e.target.value)} placeholder="e.g. STK-001 (optional)" />
+            </Field>
             <Field label="Mobile Number" required>
-              <input className={INPUT} value={form.mobile} onChange={e => set('mobile', e.target.value)} placeholder="+91 XXXXXXXXXX" required />
+              <input className={INPUT} value={form.mobile} onChange={e => set('mobile', e.target.value)} placeholder="+92 XXXXXXXXXX" required />
             </Field>
             <Field label="Subscription Type" required>
               <select className={INPUT} value={form.subscription_type} onChange={e => set('subscription_type', e.target.value)} required>
@@ -94,16 +102,28 @@ export default function CustomerModal({ customer, onClose, onSave }: Props) {
             <Field label="Discount (Rs)">
               <input className={INPUT} type="number" min="0" step="0.01" value={form.discount} onChange={e => set('discount', e.target.value)} placeholder="0 (optional)" />
             </Field>
-            <Field label="Subscription Start" required>
-              <input className={INPUT} type="datetime-local" value={form.subscription_start} onChange={e => set('subscription_start', e.target.value)} required />
-            </Field>
-            <Field label="Subscription End" required>
-              <input className={INPUT} type="datetime-local" value={form.subscription_end} onChange={e => set('subscription_end', e.target.value)} required />
-            </Field>
-            <Field label="Notes" className="col-span-2">
+
+            {!isCourse && (
+              <>
+                <Field label="Subscription Start" required>
+                  <input className={INPUT} type="datetime-local" value={form.subscription_start} onChange={e => set('subscription_start', e.target.value)} required />
+                </Field>
+                <Field label="Subscription End" required>
+                  <input className={INPUT} type="datetime-local" value={form.subscription_end} onChange={e => set('subscription_end', e.target.value)} required />
+                </Field>
+              </>
+            )}
+
+            {isCourse && (
+              <div className="sm:col-span-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3">
+                <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">Technical Analysis Course — no subscription period required.</p>
+              </div>
+            )}
+
+            <Field label="Notes" className="sm:col-span-2">
               <textarea className={INPUT} rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any relevant notes…" />
             </Field>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Payment Screenshot</label>
               <div
                 className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}

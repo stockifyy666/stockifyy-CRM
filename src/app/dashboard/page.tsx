@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
 import { fmtMoney } from '@/lib/utils'
-import { subStatus } from '@/lib/types'
+import { subStatus, SUB_TYPES } from '@/lib/types'
 import DashboardClient from './DashboardClient'
 
 export default async function DashboardPage() {
@@ -46,9 +46,7 @@ export default async function DashboardPage() {
     isToday: day === todayStr,
   }))
 
-  const types = ['Advisory', 'Paltanium Group', 'Invest with Stockifyy', 'Other']
-  const breakdown = types.map(t => ({ type: t, count: safe.filter(c => c.subscription_type === t).length }))
-
+  const breakdown = SUB_TYPES.map(t => ({ type: t, count: safe.filter(c => c.subscription_type === t).length }))
   const recent = safe.slice(0, 7)
 
   return (
@@ -65,6 +63,7 @@ export default async function DashboardPage() {
       chartData={chartData}
       breakdown={breakdown}
       recent={recent}
+      todayCustomers={todayCusts}
     />
   )
 }

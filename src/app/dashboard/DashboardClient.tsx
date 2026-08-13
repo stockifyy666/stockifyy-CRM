@@ -1,8 +1,8 @@
 'use client'
 
 import { subStatus } from '@/lib/types'
-import { fmtMoney, fmtDate } from '@/lib/utils'
-import { TrendingUp, Calendar, Users, AlertTriangle } from 'lucide-react'
+import { fmtMoney, fmtDate, fmt } from '@/lib/utils'
+import { TrendingUp, Calendar, Users, AlertTriangle, Download } from 'lucide-react'
 import Link from 'next/link'
 
 interface Props {
@@ -15,6 +15,50 @@ interface Props {
   chartData: { day: string; amount: number; isToday: boolean }[]
   breakdown: { type: string; count: number }[]
   recent: any[]
+  todayCustomers: any[]
+}
+
+async function downloadTodayExcel(customers: any[]) {
+  const { utils, writeFile } = await import('xlsx')
+  const today = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })
+
+  const rows = customers.map((c, i) => ({
+    '#': i + 1,
+    'Customer Name': c.name,
+    'Mobile': c.mobile,
+    'Subscription Type': c.subscription_type,
+    'Amount (Rs)': c.amount,
+    'Discount (Rs)': c.discount ?? 0,
+    'Net Amount (Rs)': (c.amount ?? 0) - (c.discount ?? 0),
+    'Start': fmt(c.subscription_start),
+    'End': fmt(c.subscription_end),
+    'Added By': c.added_by_profile?.name ?? '—',
+    'Notes': c.notes ?? '',
+    'Screenshot': c.screenshot_url ? 'Click to view' : '—',
+  }))
+
+  const ws = utils.json_to_sheet(rows)
+
+  // Attach hyperlinks to screenshot cells (row 2 onward, last column = L)
+  customers.forEach((c, i) => {
+    if (!c.screenshot_url) return
+    const cellRef = utils.encode_cell({ r: i + 1, c: 11 }) // col 11 = Screenshot
+    if (!ws[cellRef]) return
+    ws[cellRef].l = { Target: c.screenshot_url, Tooltip: 'Open payment screenshot' }
+    ws[cellRef].s = { font: { color: { rgb: '0563C1' }, underline: true } }
+  })
+
+  // Column widths
+  ws['!cols'] = [
+    { wch: 4 }, { wch: 25 }, { wch: 16 }, { wch: 28 },
+    { wch: 14 }, { wch: 14 }, { wch: 16 },
+    { wch: 22 }, { wch: 22 }, { wch: 18 }, { wch: 30 },
+    { wch: 18 },
+  ]
+
+  const wb = utils.book_new()
+  utils.book_append_sheet(wb, ws, today)
+  writeFile(wb, `Stockifyy-CRM-${today}.xlsx`)
 }
 
 const TYPE_PILL: Record<string, string> = {
@@ -31,7 +75,7 @@ const STATUS_PILL: Record<string, string> = {
   expired: 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300',
 }
 
-export default function DashboardClient({ metrics, chartData, breakdown, recent }: Props) {
+export default function DashboardClient({ metrics, chartData, breakdown, recent, todayCustomers }: Props) {
   const now = new Date()
   const maxAmt = Math.max(...chartData.map(d => d.amount), 1)
 
@@ -45,11 +89,27 @@ export default function DashboardClient({ metrics, chartData, breakdown, recent 
   return (
     <div>
       {/* Header */}
-      <div className="mb-5">
-        <h1 className="text-xl lg:text-2xl font-bold text-foreground tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {now.toLocaleDateString('en-PK', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-        </p>
+      <div className="flex items-start justify-between mb-5 gap-3">
+        <div>
+          <h1 className="text-xl lg:text-2xl font-bold text-foreground tracking-tight">Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {now.toLocaleDateString('en-PK', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+        <button
+          onClick={() => downloadTodayExcel(todayCustomers)}
+          disabled={todayCustomers.length === 0}
+          className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors shadow-sm flex-shrink-0"
+        >
+          <Download size={15} />
+          <span className="hidden sm:inline">Download Today</span>
+          <span className="sm:hidden">Excel</span>
+          {todayCustomers.length > 0 && (
+            <span className="bg-white/20 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
+              {todayCustomers.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Metrics — 2 cols mobile, 4 desktop */}

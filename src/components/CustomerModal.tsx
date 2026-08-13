@@ -31,7 +31,7 @@ export default function CustomerModal({ customer, onClose, onSave }: Props) {
     mobile: customer?.mobile ?? '',
     subscription_type: customer?.subscription_type ?? '',
     amount: customer?.amount?.toString() ?? '',
-    discount: customer?.discount?.toString() ?? '',
+
     subscription_start: toLocalInput(customer?.subscription_start) || localNow,
     subscription_end: toLocalInput(customer?.subscription_end) || localEnd,
     notes: customer?.notes ?? '',
@@ -60,7 +60,7 @@ export default function CustomerModal({ customer, onClose, onSave }: Props) {
       mobile: form.mobile.trim(),
       subscription_type: form.subscription_type as any,
       amount: parseFloat(form.amount),
-      discount: form.discount ? parseFloat(form.discount) : null,
+
       subscription_start: isCourse ? null : new Date(form.subscription_start).toISOString(),
       subscription_end: isCourse ? null : new Date(form.subscription_end).toISOString(),
       notes: form.notes.trim() || null,
@@ -99,9 +99,7 @@ export default function CustomerModal({ customer, onClose, onSave }: Props) {
             <Field label="Payment Amount (Rs)" required>
               <input className={INPUT} type="number" min="0" step="0.01" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00" required />
             </Field>
-            <Field label="Discount (Rs)">
-              <input className={INPUT} type="number" min="0" step="0.01" value={form.discount} onChange={e => set('discount', e.target.value)} placeholder="0 (optional)" />
-            </Field>
+
 
             {!isCourse && (
               <>

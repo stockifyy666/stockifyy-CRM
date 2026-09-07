@@ -32,11 +32,7 @@ export default async function DashboardPage() {
   })
   const monthCusts = safe.filter(c => c.subscription_start?.slice(0, 7) === monthStr)
   const active = safe.filter(c => subStatus(c.subscription_end) === 'active')
-  const expiring = safe.filter(c => {
-    const end = new Date(c.subscription_end)
-    const diff = (end.getTime() - now.getTime()) / 86400000
-    return diff >= 0 && diff <= 7
-  })
+  const expiring = safe.filter(c => subStatus(c.subscription_end) === 'expiring')
 
   const todayAmt = todayCusts.reduce((s, c) => s + (c.amount ?? 0), 0)
   const monthAmt = monthCusts.reduce((s, c) => s + (c.amount ?? 0), 0)

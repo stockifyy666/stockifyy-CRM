@@ -78,7 +78,7 @@ export function subStatus(endDate: string | null | undefined): 'active' | 'expir
   const end = new Date(endDate)
   const diffDays = (end.getTime() - now.getTime()) / 86400000
   if (diffDays < 0) return 'expired'
-  if (diffDays <= 1) return 'expiring'
+  if (diffDays <= 2) return 'expiring'
   return 'active'
 }
 

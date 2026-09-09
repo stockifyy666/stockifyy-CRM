@@ -11,7 +11,7 @@ export default async function PaymentsPage() {
   const admin = createAdminClient()
   const { data: customers } = await admin
     .from('customers')
-    .select('id, name, client_code, mobile, subscription_type, amount, subscription_start, subscription_end, screenshot_url, added_by_profile:profiles!customers_added_by_fkey(name, role)')
+    .select('*, added_by_profile:profiles!customers_added_by_fkey(name, role)')
     .order('subscription_start', { ascending: false })
 
   return <PaymentsClient customers={customers ?? []} />

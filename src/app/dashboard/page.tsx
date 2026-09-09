@@ -13,7 +13,7 @@ export default async function DashboardPage() {
   const admin = createAdminClient()
   const { data: customers } = await admin
     .from('customers')
-    .select('id, name, client_code, mobile, subscription_type, amount, subscription_start, subscription_end, created_at')
+    .select('*')
     .order('created_at', { ascending: false })
 
   const safe = customers ?? []

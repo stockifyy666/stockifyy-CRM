@@ -1,9 +1,11 @@
 'use client'
 
-import { subStatus } from '@/lib/types'
+import { useState, useMemo } from 'react'
+import { subStatus, SUB_TYPES } from '@/lib/types'
 import { fmtMoney, fmtDate, fmt } from '@/lib/utils'
 import { TrendingUp, Calendar, Users, AlertTriangle, Download } from 'lucide-react'
 import Link from 'next/link'
+import DateRangeFilter, { type DateRange, isInRange } from '@/components/DateRangeFilter'
 
 interface Props {
   metrics: {
@@ -18,6 +20,7 @@ interface Props {
   todayCustomers: any[]
   weekCustomers: any[]
   monthCustomers: any[]
+  allCustomers: any[]
 }
 
 async function exportExcel(customers: any[], label: string, filename: string) {
@@ -75,15 +78,58 @@ const STATUS_PILL: Record<string, string> = {
   expired: 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300',
 }
 
-export default function DashboardClient({ metrics, chartData, breakdown, recent, todayCustomers, weekCustomers, monthCustomers }: Props) {
+export default function DashboardClient({ metrics, chartData, breakdown, recent, todayCustomers, weekCustomers, monthCustomers, allCustomers }: Props) {
   const now = new Date()
   const maxAmt = Math.max(...chartData.map(d => d.amount), 1)
+  const [dateRange, setDateRange] = useState<DateRange>(null)
+  const [filterMonth, setFilterMonth] = useState('')
 
-  const METRIC_CARDS = [
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const y = new Date().getFullYear()
+    return `${y}-${String(i + 1).padStart(2, '0')}`
+  })
+
+  const filteredCustomers = useMemo(() => {
+    if (filterMonth) return allCustomers.filter((c: any) => (c.subscription_start ?? c.created_at)?.slice(0, 7) === filterMonth)
+    if (dateRange) return allCustomers.filter((c: any) => isInRange(c.subscription_start ?? c.created_at, dateRange))
+    return null
+  }, [allCustomers, dateRange, filterMonth])
+
+  const displayMetrics = useMemo(() => {
+    if (!filteredCustomers) return metrics
+    const fc = filteredCustomers
+    const active = fc.filter(c => subStatus(c.subscription_end) === 'active').length
+    const expiring = fc.filter(c => subStatus(c.subscription_end) === 'expiring').length
+    const totalAmt = fc.reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
+    return {
+      todayAmt: fmtMoney(totalAmt),
+      todayCount: fc.length,
+      monthAmt: fmtMoney(totalAmt),
+      monthCount: fc.length,
+      activeCount: active,
+      totalCount: fc.length,
+      expiringCount: expiring,
+    }
+  }, [filteredCustomers, metrics])
+
+  const displayBreakdown = useMemo(() => {
+    if (!filteredCustomers) return breakdown
+    return SUB_TYPES.map(t => ({ type: t, count: filteredCustomers.filter((c: any) => c.subscription_type === t).length }))
+  }, [filteredCustomers, breakdown])
+
+  const displayRecent = filteredCustomers ?? recent
+
+  const m = displayMetrics
+  const METRIC_CARDS = dateRange ? [
+    { label: 'Total Collections', value: m.todayAmt, sub: `${m.todayCount} customer${m.todayCount !== 1 ? 's' : ''} in range`, icon: TrendingUp },
+    { label: 'Active in Range', value: String(m.activeCount), sub: `of ${m.totalCount} in range`, icon: Users },
+    { label: 'Expiring Soon', value: String(m.expiringCount), sub: 'within 2 days', icon: AlertTriangle },
+    { label: 'Filtered Total', value: String(m.totalCount), sub: 'customers shown', icon: Calendar },
+  ] : [
     { label: "Today's Collections", value: metrics.todayAmt, sub: `${metrics.todayCount} payment${metrics.todayCount !== 1 ? 's' : ''}`, icon: TrendingUp },
     { label: 'This Month', value: metrics.monthAmt, sub: `${metrics.monthCount} payment${metrics.monthCount !== 1 ? 's' : ''}`, icon: Calendar },
     { label: 'Active Subscribers', value: String(metrics.activeCount), sub: `of ${metrics.totalCount} total`, icon: Users },
-    { label: 'Expiring Soon', value: String(metrics.expiringCount), sub: 'within 7 days', icon: AlertTriangle },
+    { label: 'Expiring Soon', value: String(metrics.expiringCount), sub: 'within 2 days', icon: AlertTriangle },
   ]
 
   return (
@@ -124,6 +170,22 @@ export default function DashboardClient({ metrics, chartData, breakdown, recent,
         </div>
       </div>
 
+      <DateRangeFilter
+        value={filterMonth ? null : dateRange}
+        onChange={r => { setFilterMonth(''); setDateRange(r) }}
+        label="Filter dashboard by date:"
+      />
+      <div className="mb-4">
+        <select value={filterMonth} onChange={e => { setFilterMonth(e.target.value); setDateRange(null) }}
+          className="w-full sm:w-56 px-3 py-2 text-sm border border-border rounded-lg outline-none bg-card text-foreground">
+          <option value="">All Months</option>
+          {months.map((m: string) => {
+            const [y, mo] = m.split('-')
+            return <option key={m} value={m}>{new Date(Number(y), Number(mo) - 1, 1).toLocaleString('en-PK', { month: 'long', year: 'numeric' })}</option>
+          })}
+        </select>
+      </div>
+
       {/* Metrics — 2 cols mobile, 4 desktop */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mb-5">
         {METRIC_CARDS.map(({ label, value, sub, icon: Icon }) => (
@@ -146,18 +208,18 @@ export default function DashboardClient({ metrics, chartData, breakdown, recent,
         {/* Recent customers */}
         <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <span className="text-sm font-semibold text-foreground">Recent Customers</span>
+            <span className="text-sm font-semibold text-foreground">{dateRange ? `Customers (${displayRecent.length})` : 'Recent Customers'}</span>
             <Link href="/dashboard/customers" className="text-xs text-primary font-semibold hover:underline">View all →</Link>
           </div>
 
-          {recent.length === 0 && (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">No customers yet</p>
+          {displayRecent.length === 0 && (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">No customers in this range</p>
           )}
 
           {/* Mobile: cards */}
-          {recent.length > 0 && (
+          {displayRecent.length > 0 && (
             <div className="md:hidden divide-y divide-border">
-              {recent.map(c => {
+              {displayRecent.slice(0, 20).map((c: any) => {
                 const st = subStatus(c.subscription_end)
                 return (
                   <div key={c.id} className="px-4 py-3 flex items-center justify-between gap-3">
@@ -178,7 +240,7 @@ export default function DashboardClient({ metrics, chartData, breakdown, recent,
           )}
 
           {/* Desktop: table */}
-          {recent.length > 0 && (
+          {displayRecent.length > 0 && (
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full min-w-max">
                 <thead>
@@ -189,7 +251,7 @@ export default function DashboardClient({ metrics, chartData, breakdown, recent,
                   </tr>
                 </thead>
                 <tbody>
-                  {recent.map(c => {
+                  {displayRecent.slice(0, 20).map((c: any) => {
                     const st = subStatus(c.subscription_end)
                     return (
                       <tr key={c.id} className="border-t border-border hover:bg-muted/40 transition-colors">
@@ -246,10 +308,10 @@ export default function DashboardClient({ metrics, chartData, breakdown, recent,
           <div className="bg-card border border-border rounded-xl shadow-sm p-4 lg:p-5">
             <div className="text-sm font-semibold text-foreground mb-3">By Type</div>
             <div className="space-y-3">
-              {breakdown.filter(b => b.count > 0).length === 0 ? (
+              {displayBreakdown.filter((b: any) => b.count > 0).length === 0 ? (
                 <p className="text-sm text-muted-foreground">No data yet</p>
-              ) : breakdown.map(({ type, count }) => {
-                const total = Math.max(breakdown.reduce((s, b) => s + b.count, 0), 1)
+              ) : displayBreakdown.map(({ type, count }: any) => {
+                const total = Math.max(displayBreakdown.reduce((s: number, b: any) => s + b.count, 0), 1)
                 const pct = Math.round(count / total * 100)
                 if (count === 0) return null
                 return (

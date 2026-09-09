@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Users, CreditCard, Shield, ChevronRight, LogOut, TrendingUp, X, PieChart, Headphones } from 'lucide-react'
+import { LayoutDashboard, Users, CreditCard, Shield, ChevronRight, LogOut, TrendingUp, X, PieChart, Headphones, BookOpen } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/lib/types'
 
@@ -19,6 +19,7 @@ const MAIN_NAV = [
 const SERVICES_NAV = [
   { href: '/dashboard/portfolio', label: 'Portfolio Designing', icon: PieChart },
   { href: '/dashboard/advisory', label: 'One on One Advisory', icon: Headphones },
+  { href: '/dashboard/technical-course', label: 'Technical Course', icon: BookOpen },
 ]
 
 const ADMIN_NAV = [

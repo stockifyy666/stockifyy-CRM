@@ -36,6 +36,7 @@ export default function CustomerDetail({ customer: c, profile, onClose, onEdit, 
   const [commentText, setCommentText] = useState('')
   const [posting, setPosting] = useState(false)
   const [lightbox, setLightbox] = useState(false)
+  const [invoiceLightbox, setInvoiceLightbox] = useState(false)
   const st = subStatus(c.subscription_end)
   const canComment = profile.role === 'admin' || profile.role === 'finance'
   const canDelete = profile.role === 'admin'
@@ -70,7 +71,12 @@ export default function CustomerDetail({ customer: c, profile, onClose, onEdit, 
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-4 border-b border-border">
           <div>
-            <h2 className="text-lg font-bold text-foreground tracking-tight">{c.name}</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-foreground tracking-tight">{c.name}</h2>
+              {c.is_renewed && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300">Renewed</span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground mt-0.5">ID: {c.id}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors mt-0.5">
@@ -112,6 +118,14 @@ export default function CustomerDetail({ customer: c, profile, onClose, onEdit, 
             {c.screenshot_url
               ? <img src={c.screenshot_url} className="max-h-48 rounded-xl border border-border object-contain cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setLightbox(true)} alt="Payment screenshot" />
               : <p className="text-sm text-muted-foreground">No screenshot uploaded</p>}
+          </div>
+
+          {/* Invoice */}
+          <div className="border-t border-border pt-5">
+            <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Invoice</label>
+            {c.invoice_url
+              ? <img src={c.invoice_url} className="max-h-48 rounded-xl border border-border object-contain cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setInvoiceLightbox(true)} alt="Invoice" />
+              : <p className="text-sm text-muted-foreground">No invoice uploaded</p>}
           </div>
 
           {/* Comments */}
@@ -172,6 +186,12 @@ export default function CustomerDetail({ customer: c, profile, onClose, onEdit, 
         <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-5" onClick={() => setLightbox(false)}>
           <button className="absolute top-5 right-5 text-white/60 hover:text-white text-2xl font-light">✕</button>
           <img src={c.screenshot_url} className="max-w-full max-h-[90vh] rounded-lg" alt="Payment screenshot" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+      {invoiceLightbox && c.invoice_url && (
+        <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-5" onClick={() => setInvoiceLightbox(false)}>
+          <button className="absolute top-5 right-5 text-white/60 hover:text-white text-2xl font-light">✕</button>
+          <img src={c.invoice_url} className="max-w-full max-h-[90vh] rounded-lg" alt="Invoice" onClick={e => e.stopPropagation()} />
         </div>
       )}
     </div>

@@ -9,13 +9,14 @@ export default async function CustomersPage() {
   if (!user) redirect('/login')
 
   const admin = createAdminClient()
-  const { data: profile } = await admin.from('profiles').select('*').eq('id', user.id).single()
+  const [{ data: profile }, { data: customers }] = await Promise.all([
+    admin.from('profiles').select('*').eq('id', user.id).single(),
+    admin
+      .from('customers')
+      .select('*, added_by_profile:profiles!customers_added_by_fkey(name, role)')
+      .order('created_at', { ascending: false }),
+  ])
   if (!profile) redirect('/login')
-
-  const { data: customers = [] } = await admin
-    .from('customers')
-    .select('*, added_by_profile:profiles!customers_added_by_fkey(name, role)')
-    .order('created_at', { ascending: false })
 
   return <CustomersClient customers={customers ?? []} profile={profile} />
 }

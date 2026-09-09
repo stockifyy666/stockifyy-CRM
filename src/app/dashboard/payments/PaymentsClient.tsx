@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import type { Customer } from '@/lib/types'
 import { SUB_TYPES } from '@/lib/types'
 import { fmtMoney, fmt } from '@/lib/utils'
+import DateRangeFilter, { type DateRange, isInRange } from '@/components/DateRangeFilter'
 
 const TYPE_PILL: Record<string, string> = {
   'Swing with Stockifyy':      'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
@@ -19,31 +20,29 @@ export default function PaymentsClient({ customers }: { customers: Customer[] })
   const todayStr = now.toISOString().slice(0, 10)
   const monthStr = now.toISOString().slice(0, 7)
 
-  const [filterMonth, setFilterMonth] = useState('')
   const [filterType, setFilterType] = useState('')
+  const [filterMonth, setFilterMonth] = useState('')
+  const [dateRange, setDateRange] = useState<DateRange>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
 
-  const months = useMemo(() => {
-    const ms = [...new Set(customers.map(c => c.subscription_start?.slice(0, 7)).filter(Boolean))].sort().reverse()
-    return ms as string[]
-  }, [customers])
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const y = new Date().getFullYear()
+    return `${y}-${String(i + 1).padStart(2, '0')}`
+  })
 
   const filtered = useMemo(() => customers.filter(c => {
-    const matchM = !filterMonth || c.subscription_start?.slice(0, 7) === filterMonth
     const matchT = !filterType || c.subscription_type === filterType
-    return matchM && matchT
-  }), [customers, filterMonth, filterType])
+    const matchM = !filterMonth || c.subscription_start?.slice(0, 7) === filterMonth
+    const matchD = !filterMonth && isInRange(c.subscription_start ?? c.created_at, dateRange)
+    return matchT && (filterMonth ? matchM : matchD)
+  }), [customers, filterType, filterMonth, dateRange])
 
   const todayAmt = customers.filter(c => c.subscription_start?.slice(0, 10) === todayStr).reduce((s, c) => s + c.amount, 0)
   const todayCount = customers.filter(c => c.subscription_start?.slice(0, 10) === todayStr).length
   const monthAmt = customers.filter(c => c.subscription_start?.slice(0, 7) === monthStr).reduce((s, c) => s + c.amount, 0)
   const monthCount = customers.filter(c => c.subscription_start?.slice(0, 7) === monthStr).length
   const totalAmt = customers.reduce((s, c) => s + c.amount, 0)
-
-  function fmtMonth(m: string) {
-    const [y, mo] = m.split('-')
-    return new Date(Number(y), Number(mo) - 1, 1).toLocaleString('en-PK', { month: 'long', year: 'numeric' })
-  }
+  const filteredAmt = filtered.reduce((s, c) => s + c.amount, 0)
 
   return (
     <div>
@@ -57,7 +56,7 @@ export default function PaymentsClient({ customers }: { customers: Customer[] })
         {[
           { label: "Today", value: fmtMoney(todayAmt), sub: `${todayCount} payment${todayCount !== 1 ? 's' : ''}` },
           { label: "This Month", value: fmtMoney(monthAmt), sub: `${monthCount} payment${monthCount !== 1 ? 's' : ''}` },
-          { label: "All Time", value: fmtMoney(totalAmt), sub: `${customers.length} total` },
+          { label: dateRange ? 'Filtered Total' : 'All Time', value: dateRange ? fmtMoney(filteredAmt) : fmtMoney(totalAmt), sub: dateRange ? `${filtered.length} in range` : `${customers.length} total` },
         ].map(({ label, value, sub }) => (
           <div key={label} className="bg-card border border-border rounded-xl p-4 lg:p-5 shadow-sm">
             <div className="text-sm font-medium text-muted-foreground mb-2">{label}</div>
@@ -67,12 +66,25 @@ export default function PaymentsClient({ customers }: { customers: Customer[] })
         ))}
       </div>
 
-      {/* Filters */}
+      <DateRangeFilter
+        value={filterMonth ? null : dateRange}
+        onChange={r => { setFilterMonth(''); setDateRange(r) }}
+        label="Filter by payment date:"
+      />
+
+      {/* Month + Type dropdowns */}
       <div className="flex flex-col sm:flex-row gap-2 mb-4">
-        <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
-          className="flex-1 px-3 py-2 text-sm border border-border rounded-lg outline-none bg-card text-foreground">
+        <select
+          value={filterMonth}
+          onChange={e => { setFilterMonth(e.target.value); setDateRange(null) }}
+          className="flex-1 px-3 py-2 text-sm border border-border rounded-lg outline-none bg-card text-foreground"
+        >
           <option value="">All Months</option>
-          {months.map(m => <option key={m} value={m}>{fmtMonth(m)}</option>)}
+          {months.map(m => {
+            const [y, mo] = m.split('-')
+            const label = new Date(Number(y), Number(mo) - 1, 1).toLocaleString('en-PK', { month: 'long', year: 'numeric' })
+            return <option key={m} value={m}>{label}</option>
+          })}
         </select>
         <select value={filterType} onChange={e => setFilterType(e.target.value)}
           className="flex-1 px-3 py-2 text-sm border border-border rounded-lg outline-none bg-card text-foreground">
@@ -116,7 +128,7 @@ export default function PaymentsClient({ customers }: { customers: Customer[] })
           })}
           <div className="bg-muted/30 border border-border rounded-xl px-4 py-3 flex justify-between items-center">
             <span className="text-xs text-muted-foreground">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
-            <span className="text-sm font-bold text-foreground tabular-nums">Total: {fmtMoney(filtered.reduce((s, c) => s + c.amount, 0))}</span>
+            <span className="text-sm font-bold text-foreground tabular-nums">Total: {fmtMoney(filteredAmt)}</span>
           </div>
         </div>
       )}
@@ -160,7 +172,7 @@ export default function PaymentsClient({ customers }: { customers: Customer[] })
           </table>
           <div className="px-4 py-3 border-t border-border flex justify-between items-center bg-muted/30">
             <span className="text-xs text-muted-foreground">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
-            <span className="text-sm font-bold text-foreground tabular-nums">Total: {fmtMoney(filtered.reduce((s, c) => s + c.amount, 0))}</span>
+            <span className="text-sm font-bold text-foreground tabular-nums">Total: {fmtMoney(filteredAmt)}</span>
           </div>
         </div>
       )}

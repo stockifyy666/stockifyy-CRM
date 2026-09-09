@@ -11,10 +11,9 @@ export default async function DashboardPage() {
   if (!user) redirect('/login')
 
   const admin = createAdminClient()
-
-  const { data: customers = [] } = await admin
+  const { data: customers } = await admin
     .from('customers')
-    .select('*, added_by_profile:profiles!customers_added_by_fkey(name, role)')
+    .select('id, name, client_code, mobile, subscription_type, amount, subscription_start, subscription_end, created_at')
     .order('created_at', { ascending: false })
 
   const safe = customers ?? []
@@ -69,6 +68,7 @@ export default async function DashboardPage() {
       todayCustomers={todayCusts}
       weekCustomers={weekCusts}
       monthCustomers={monthCusts}
+      allCustomers={safe}
     />
   )
 }

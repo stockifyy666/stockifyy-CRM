@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, X, Headphones, Trash2, Pencil } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Plus, X, Headphones, Trash2, Pencil, Search } from 'lucide-react'
+import DateRangeFilter, { type DateRange, isInRange } from '@/components/DateRangeFilter'
 import type { Profile, AdvisoryClient as AC } from '@/lib/types'
-import { fmt } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Toast, { useToast } from '@/components/Toast'
@@ -16,19 +16,38 @@ function todayLocal() {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 }
 
-const EMPTY = { full_name: '', client_code: '', phone: '', mentor: '', adding_date: todayLocal(), notes: '' }
+const EMPTY = { full_name: '', client_code: '', phone: '', mentor: '', adding_date: todayLocal(), meeting_date: '', meeting_time: '', amount: '', notes: '' }
 
 export default function AdvisoryClient({ clients: initial, profile }: { clients: AC[]; profile: Profile }) {
   const router = useRouter()
   const supabase = createClient()
   const { toast, showToast } = useToast()
   const [clients, setClients] = useState<AC[]>(initial)
+  const [search, setSearch] = useState('')
+  const [filterMonth, setFilterMonth] = useState('')
+  const [dateRange, setDateRange] = useState<DateRange>(null)
+
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const y = new Date().getFullYear()
+    return `${y}-${String(i + 1).padStart(2, '0')}`
+  })
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<AC | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(EMPTY)
   const canDelete = profile.role === 'admin'
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    if (!q) return clients
+    return clients.filter(c =>
+      (c.full_name.toLowerCase().includes(q) ||
+      c.phone.includes(q) ||
+      (c.client_code ?? '').toLowerCase().includes(q)) &&
+      (filterMonth ? (c.adding_date ?? c.created_at)?.slice(0, 7) === filterMonth : isInRange(c.adding_date ?? c.created_at, dateRange))
+    )
+  }, [clients, search, filterMonth, dateRange])
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })) }
 
@@ -37,10 +56,13 @@ export default function AdvisoryClient({ clients: initial, profile }: { clients:
     setEditing(c)
     setForm({
       full_name: c.full_name,
-      client_code: c.client_code,
+      client_code: c.client_code ?? '',
       phone: c.phone,
       mentor: c.mentor,
       adding_date: c.adding_date?.slice(0, 10) ?? todayLocal(),
+      meeting_date: c.meeting_date?.slice(0, 10) ?? '',
+      meeting_time: c.meeting_time ?? '',
+      amount: c.amount != null ? String(c.amount) : '',
       notes: c.notes ?? '',
     })
     setOpen(true)
@@ -51,10 +73,13 @@ export default function AdvisoryClient({ clients: initial, profile }: { clients:
     setSaving(true)
     const payload = {
       full_name: form.full_name.trim(),
-      client_code: form.client_code.trim(),
+      client_code: form.client_code.trim() || null,
       phone: form.phone.trim(),
       mentor: form.mentor.trim(),
-      adding_date: form.adding_date,
+      adding_date: form.adding_date || todayLocal(),
+      meeting_date: form.meeting_date || null,
+      meeting_time: form.meeting_time.trim() || null,
+      amount: form.amount ? parseFloat(form.amount) : null,
       notes: form.notes.trim() || null,
     }
     if (editing) {
@@ -98,36 +123,56 @@ export default function AdvisoryClient({ clients: initial, profile }: { clients:
         </button>
       </div>
 
-      {clients.length === 0 && (
+      <DateRangeFilter
+        value={filterMonth ? null : dateRange}
+        onChange={r => { setFilterMonth(''); setDateRange(r) }}
+        label="Filter by adding date:"
+      />
+      <div className="mb-4">
+        <select value={filterMonth} onChange={e => { setFilterMonth(e.target.value); setDateRange(null) }}
+          className="w-full sm:w-56 px-3 py-2 text-sm border border-border rounded-lg outline-none bg-card text-foreground">
+          <option value="">All Months</option>
+          {months.map(m => {
+            const [y, mo] = m.split('-')
+            return <option key={m} value={m}>{new Date(Number(y), Number(mo) - 1, 1).toLocaleString('en-PK', { month: 'long', year: 'numeric' })}</option>
+          })}
+        </select>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <input type="text" placeholder="Search by name, phone or client code…" value={search} onChange={e => setSearch(e.target.value)}
+          className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg outline-none focus:border-ring focus:ring-1 focus:ring-ring bg-card text-foreground placeholder:text-muted-foreground" />
+      </div>
+
+      {filtered.length === 0 && (
         <div className="bg-card border border-border rounded-xl p-12 text-center text-sm text-muted-foreground shadow-sm">
-          No advisory clients yet. Click "Add Client" to get started.
+          {search ? 'No clients match your search.' : 'No advisory clients yet.'}
         </div>
       )}
 
       {/* Mobile cards */}
-      {clients.length > 0 && (
+      {filtered.length > 0 && (
         <div className="flex flex-col gap-3 md:hidden">
-          {clients.map(c => (
+          {filtered.map(c => (
             <div key={c.id} className="bg-card border border-border rounded-xl p-4 shadow-sm">
               <div className="flex items-start justify-between gap-2 mb-2">
                 <div>
                   <div className="font-semibold text-foreground">{c.full_name}</div>
-                  <div className="text-xs text-muted-foreground font-mono">{c.client_code}</div>
+                  {c.client_code && <div className="text-xs text-muted-foreground font-mono">{c.client_code}</div>}
                 </div>
                 <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 flex-shrink-0">{c.mentor}</span>
               </div>
               <div className="text-sm text-muted-foreground mb-1">{c.phone}</div>
-              <div className="text-xs text-muted-foreground mb-3">Date: {new Date(c.adding_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+              <div className="text-xs text-muted-foreground mb-1">Added: {new Date(c.adding_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+              {c.amount != null && <div className="text-xs text-muted-foreground mb-1">Amount: Rs {c.amount.toLocaleString()}</div>}
+              {c.meeting_date && <div className="text-xs text-muted-foreground mb-1">Meeting Date: {new Date(c.meeting_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</div>}
+              {c.meeting_time && <div className="text-xs text-muted-foreground mb-1">Meeting Time: {c.meeting_time}</div>}
               {c.notes && <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 mb-3">{c.notes}</div>}
               <div className="flex gap-2 pt-2 border-t border-border">
-                <button onClick={() => openEdit(c)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors">
-                  <Pencil size={12} /> Edit
-                </button>
-                {canDelete && (
-                  <button onClick={() => setConfirmId(c.id)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors">
-                    <Trash2 size={12} />
-                  </button>
-                )}
+                <button onClick={() => openEdit(c)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors"><Pencil size={12} /> Edit</button>
+                {canDelete && <button onClick={() => setConfirmId(c.id)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"><Trash2 size={12} /></button>}
               </div>
             </div>
           ))}
@@ -135,22 +180,22 @@ export default function AdvisoryClient({ clients: initial, profile }: { clients:
       )}
 
       {/* Desktop table */}
-      {clients.length > 0 && (
+      {filtered.length > 0 && (
         <div className="hidden md:block bg-card border border-border rounded-xl shadow-sm overflow-x-auto">
           <table className="w-full min-w-max">
             <thead>
               <tr className="bg-muted/50">
-                {['#', 'Full Name', 'Client Code', 'Phone', 'Mentor', 'Date', 'Notes', 'Added By', 'Actions'].map(h => (
+                {['#', 'Full Name', 'Client Code', 'Phone', 'Mentor', 'Adding Date', 'Amount', 'Meeting Date', 'Meeting Time', 'Notes', 'Added By', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {clients.map((c, i) => (
+              {filtered.map((c, i) => (
                 <tr key={c.id} className="border-t border-border hover:bg-muted/40 transition-colors">
                   <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{i + 1}</td>
                   <td className="px-4 py-3 font-semibold text-foreground text-sm whitespace-nowrap">{c.full_name}</td>
-                  <td className="px-4 py-3 text-sm font-mono text-foreground whitespace-nowrap">{c.client_code}</td>
+                  <td className="px-4 py-3 text-sm font-mono text-foreground whitespace-nowrap">{c.client_code ?? '—'}</td>
                   <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{c.phone}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{c.mentor}</span>
@@ -158,6 +203,11 @@ export default function AdvisoryClient({ clients: initial, profile }: { clients:
                   <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                     {new Date(c.adding_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </td>
+                  <td className="px-4 py-3 text-sm font-bold text-foreground tabular-nums whitespace-nowrap">{c.amount != null ? `Rs ${c.amount.toLocaleString()}` : '—'}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                    {c.meeting_date ? new Date(c.meeting_date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{c.meeting_time ?? '—'}</td>
                   <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{c.notes ?? '—'}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{(c as any).added_by_profile?.name ?? '—'}</td>
                   <td className="px-4 py-3">
@@ -176,17 +226,20 @@ export default function AdvisoryClient({ clients: initial, profile }: { clients:
       {/* Modal */}
       {open && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-card border border-border rounded-t-2xl sm:rounded-xl shadow-2xl w-full sm:max-w-lg">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div className="bg-card border border-border rounded-t-2xl sm:rounded-xl shadow-2xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border sticky top-0 bg-card">
               <h2 className="text-lg font-bold text-foreground">{editing ? 'Edit Client' : 'Add Advisory Client'}</h2>
               <button onClick={() => setOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted"><X size={15} /></button>
             </div>
             <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <F label="Full Name" required><input className={INPUT} value={form.full_name} onChange={e => set('full_name', e.target.value)} placeholder="Client full name" required /></F>
-              <F label="Client Code" required><input className={INPUT} value={form.client_code} onChange={e => set('client_code', e.target.value)} placeholder="e.g. OOA-001" required /></F>
+              <F label="Client Code"><input className={INPUT} value={form.client_code} onChange={e => set('client_code', e.target.value)} placeholder="e.g. OOA-001 (optional)" /></F>
               <F label="Phone Number" required><input className={INPUT} value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="+92 XXXXXXXXXX" required /></F>
               <F label="Mentor" required><input className={INPUT} value={form.mentor} onChange={e => set('mentor', e.target.value)} placeholder="Mentor name" required /></F>
-              <F label="Adding Date" required><input className={INPUT} type="date" value={form.adding_date} onChange={e => set('adding_date', e.target.value)} required /></F>
+              <F label="Adding Date"><input className={INPUT} type="date" value={form.adding_date} onChange={e => set('adding_date', e.target.value)} /></F>
+              <F label="Amount (Rs)"><input className={INPUT} type="number" min="0" step="0.01" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00 (optional)" /></F>
+              <F label="Meeting Date"><input className={INPUT} type="date" value={form.meeting_date} onChange={e => set('meeting_date', e.target.value)} /></F>
+              <F label="Meeting Time"><input className={INPUT} type="time" value={form.meeting_time} onChange={e => set('meeting_time', e.target.value)} /></F>
               <F label="Notes" className="sm:col-span-2"><textarea className={INPUT} rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any notes…" /></F>
               <div className="sm:col-span-2 flex gap-3 justify-end pt-2">
                 <button type="button" onClick={() => setOpen(false)} className="px-4 py-2 text-sm font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors">Cancel</button>
@@ -199,14 +252,7 @@ export default function AdvisoryClient({ clients: initial, profile }: { clients:
         </div>
       )}
 
-      {confirmId && (
-        <ConfirmDialog
-          title="Remove client?"
-          message="This will permanently delete this advisory client."
-          onConfirm={() => { handleDelete(confirmId); setConfirmId(null) }}
-          onCancel={() => setConfirmId(null)}
-        />
-      )}
+      {confirmId && <ConfirmDialog title="Remove client?" message="This will permanently delete this advisory client." onConfirm={() => { handleDelete(confirmId); setConfirmId(null) }} onCancel={() => setConfirmId(null)} />}
     </div>
   )
 }

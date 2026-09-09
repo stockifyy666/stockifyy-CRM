@@ -11,7 +11,6 @@ export type SubscriptionType =
   | 'Swing with Stockifyy'
   | 'Trade with Stockifyy'
   | 'Invest with Stockifyy'
-  | 'Technical Analysis Course'
 
 export interface Customer {
   id: string
@@ -25,6 +24,8 @@ export interface Customer {
   subscription_end: string | null
   notes: string | null
   screenshot_url: string | null
+  invoice_url: string | null
+  is_renewed: boolean
   added_by: string | null
   updated_by: string | null
   created_at: string
@@ -36,7 +37,7 @@ export interface Customer {
 export interface PortfolioClient {
   id: string
   full_name: string
-  client_code: string
+  client_code: string | null
   phone: string
   duration: string
   capital: number
@@ -49,13 +50,31 @@ export interface PortfolioClient {
 export interface AdvisoryClient {
   id: string
   full_name: string
-  client_code: string
+  client_code: string | null
   phone: string
   mentor: string
   adding_date: string
+  meeting_date: string | null
+  meeting_time: string | null
+  amount: number | null
   notes: string | null
   added_by: string | null
   created_at: string
+  added_by_profile?: Profile
+}
+
+export interface TechnicalCourseClient {
+  id: string
+  name: string
+  client_code: string | null
+  mobile: string
+  subscription_type: string
+  amount: number
+  notes: string | null
+  screenshot_url: string | null
+  added_by: string | null
+  created_at: string
+  updated_at: string
   added_by_profile?: Profile
 }
 
@@ -86,5 +105,4 @@ export const SUB_TYPES: SubscriptionType[] = [
   'Swing with Stockifyy',
   'Trade with Stockifyy',
   'Invest with Stockifyy',
-  'Technical Analysis Course',
 ]

@@ -12,7 +12,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 
 const INPUT = 'w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:border-ring focus:ring-1 focus:ring-ring bg-card text-foreground placeholder:text-muted-foreground transition-colors'
 
-const EMPTY = { name: '', client_code: '', mobile: '', amount: '', notes: '' }
+const EMPTY = { name: '', client_code: '', mobile: '', amount: '', installments: '', notes: '' }
 
 export default function TechnicalCourseClient({ clients: initial, profile }: { clients: TC[]; profile: Profile }) {
   const router = useRouter()
@@ -71,6 +71,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
     setForm({
       name: c.name, client_code: c.client_code ?? '', mobile: c.mobile,
       amount: String(c.amount),
+      installments: c.installments != null ? String(c.installments) : '',
       notes: c.notes ?? '',
     })
     setFile(null); setPreview(c.screenshot_url)
@@ -94,6 +95,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
       client_code: form.client_code.trim() || null,
       mobile: form.mobile.trim(),
       amount: parseFloat(form.amount),
+      installments: form.installments !== '' ? parseInt(form.installments) : null,
       notes: form.notes.trim() || null,
       screenshot_url,
     }
@@ -204,7 +206,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
           <table className="w-full min-w-max">
             <thead>
               <tr className="bg-muted/50">
-                {['#', 'Name', 'Client Code', 'Mobile', 'Amount', 'Screenshot', 'Added By', 'Actions'].map(h => (
+                {['#', 'Name', 'Client Code', 'Mobile', 'Amount', 'Installments', 'Screenshot', 'Added By', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -220,6 +222,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                   <td className="px-4 py-3 text-sm font-mono text-foreground whitespace-nowrap">{c.client_code ?? '—'}</td>
                   <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{c.mobile}</td>
                   <td className="px-4 py-3 text-sm font-bold text-foreground tabular-nums whitespace-nowrap">{fmtMoney(c.amount)}</td>
+                  <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{c.installments != null ? c.installments : '—'}</td>
                   <td className="px-4 py-3">
                     {c.screenshot_url
                       ? <button onClick={() => setLightbox(c.screenshot_url!)} className="hover:opacity-75 transition-opacity">
@@ -254,6 +257,12 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
               <F label="Client Code"><input className={INPUT} value={form.client_code} onChange={e => set('client_code', e.target.value)} placeholder="e.g. TC-001 (optional)" /></F>
               <F label="Mobile Number" required><input className={INPUT} value={form.mobile} onChange={e => set('mobile', e.target.value)} placeholder="+92 XXXXXXXXXX" required /></F>
               <F label="Payment Amount (Rs)" required><input className={INPUT} type="number" min="0" step="0.01" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00" required /></F>
+              <F label="No. of Installments">
+                <select className={INPUT} value={form.installments} onChange={e => set('installments', e.target.value)}>
+                  <option value="">Select…</option>
+                  {[0,1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </F>
               <F label="Notes" className="sm:col-span-2"><textarea className={INPUT} rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any notes…" /></F>
               <div className="sm:col-span-2">
                 <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Payment Screenshot</label>

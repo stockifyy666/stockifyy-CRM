@@ -41,6 +41,9 @@ export interface PortfolioClient {
   phone: string
   duration: string
   capital: number
+  amount: number | null
+  risk: string | null
+  screenshot_url: string | null
   notes: string | null
   added_by: string | null
   created_at: string
@@ -50,13 +53,14 @@ export interface PortfolioClient {
 export interface AdvisoryClient {
   id: string
   full_name: string
-  client_code: string | null
   phone: string
+  package: string | null
   mentor: string
   adding_date: string
   meeting_date: string | null
   meeting_time: string | null
   amount: number | null
+  screenshot_url: string | null
   notes: string | null
   added_by: string | null
   created_at: string
@@ -70,6 +74,7 @@ export interface TechnicalCourseClient {
   mobile: string
   subscription_type: string
   amount: number
+  installments: number | null
   notes: string | null
   screenshot_url: string | null
   added_by: string | null

@@ -7,6 +7,13 @@ import { TrendingUp, Calendar, Users, AlertTriangle, Download } from 'lucide-rea
 import Link from 'next/link'
 import DateRangeFilter, { type DateRange, isInRange } from '@/components/DateRangeFilter'
 
+interface PeriodData {
+  customers: any[]
+  advisory: any[]
+  portfolio: any[]
+  technical: any[]
+}
+
 interface Props {
   metrics: {
     todayAmt: string; todayCount: number
@@ -17,46 +24,91 @@ interface Props {
   chartData: { day: string; amount: number; isToday: boolean }[]
   breakdown: { type: string; count: number }[]
   recent: any[]
-  todayCustomers: any[]
-  weekCustomers: any[]
-  monthCustomers: any[]
+  todayAll: PeriodData
+  weekAll: PeriodData
+  monthAll: PeriodData
   allCustomers: any[]
 }
 
-async function exportExcel(customers: any[], label: string, filename: string) {
+async function exportExcel(data: PeriodData, label: string, filename: string) {
   const { utils, writeFile } = await import('xlsx')
 
-  const rows = customers.map((c, i) => ({
-    '#': i + 1,
-    'Customer Name': c.name,
-    'Client Code': c.client_code ?? '—',
-    'Mobile': c.mobile,
-    'Subscription Type': c.subscription_type,
-    'Amount (Rs)': c.amount,
-    'Discount (Rs)': c.discount ?? 0,
-    'Net Amount (Rs)': (c.amount ?? 0) - (c.discount ?? 0),
-    'Start': fmt(c.subscription_start),
-    'End': fmt(c.subscription_end),
-    'Added By': c.added_by_profile?.name ?? '—',
-    'Notes': c.notes ?? '',
-    'Screenshot': c.screenshot_url ? 'Click to view' : '—',
-  }))
+  const rows: any[] = []
+  let idx = 1
 
-  const ws = utils.json_to_sheet(rows)
-
-  customers.forEach((c, i) => {
-    if (!c.screenshot_url) return
-    const cellRef = utils.encode_cell({ r: i + 1, c: 12 }) // col 12 = Screenshot (shifted by client_code)
-    if (!ws[cellRef]) return
-    ws[cellRef].l = { Target: c.screenshot_url, Tooltip: 'Open payment screenshot' }
-    ws[cellRef].s = { font: { color: { rgb: '0563C1' }, underline: true } }
+  data.customers.forEach(c => {
+    rows.push({
+      '#': idx++,
+      'Type': 'Customer',
+      'Name': c.name,
+      'Client Code': c.client_code ?? '—',
+      'Mobile': c.mobile,
+      'Package / Subscription': c.subscription_type,
+      'Amount (Rs)': c.amount ?? 0,
+      'Discount (Rs)': c.discount ?? 0,
+      'Net Amount (Rs)': (c.amount ?? 0) - (c.discount ?? 0),
+      'Start': fmt(c.subscription_start),
+      'End': fmt(c.subscription_end),
+      'Notes': c.notes ?? '',
+    })
   })
 
+  data.advisory.forEach(c => {
+    rows.push({
+      '#': idx++,
+      'Type': 'Advisory',
+      'Name': c.full_name,
+      'Client Code': '—',
+      'Mobile': c.phone,
+      'Package / Subscription': c.package ?? '—',
+      'Amount (Rs)': c.amount ?? 0,
+      'Discount (Rs)': 0,
+      'Net Amount (Rs)': c.amount ?? 0,
+      'Start': fmt(c.adding_date ?? c.created_at),
+      'End': '—',
+      'Notes': '',
+    })
+  })
+
+  data.portfolio.forEach(c => {
+    rows.push({
+      '#': idx++,
+      'Type': 'Portfolio',
+      'Name': c.full_name,
+      'Client Code': c.client_code ?? '—',
+      'Mobile': c.phone,
+      'Package / Subscription': `Duration: ${c.duration}`,
+      'Amount (Rs)': c.amount ?? 0,
+      'Discount (Rs)': 0,
+      'Net Amount (Rs)': c.amount ?? 0,
+      'Start': fmt(c.created_at),
+      'End': '—',
+      'Notes': '',
+    })
+  })
+
+  data.technical.forEach(c => {
+    rows.push({
+      '#': idx++,
+      'Type': 'Technical Course',
+      'Name': c.name,
+      'Client Code': c.client_code ?? '—',
+      'Mobile': c.mobile,
+      'Package / Subscription': c.subscription_type,
+      'Amount (Rs)': c.amount ?? 0,
+      'Discount (Rs)': 0,
+      'Net Amount (Rs)': c.amount ?? 0,
+      'Start': fmt(c.created_at),
+      'End': '—',
+      'Notes': '',
+    })
+  })
+
+  const ws = utils.json_to_sheet(rows)
   ws['!cols'] = [
-    { wch: 4 }, { wch: 25 }, { wch: 14 }, { wch: 16 }, { wch: 28 },
-    { wch: 14 }, { wch: 14 }, { wch: 16 },
-    { wch: 22 }, { wch: 22 }, { wch: 18 }, { wch: 30 },
-    { wch: 18 },
+    { wch: 4 }, { wch: 16 }, { wch: 25 }, { wch: 14 }, { wch: 16 },
+    { wch: 28 }, { wch: 14 }, { wch: 14 }, { wch: 16 },
+    { wch: 22 }, { wch: 22 }, { wch: 30 },
   ]
 
   const wb = utils.book_new()
@@ -78,7 +130,7 @@ const STATUS_PILL: Record<string, string> = {
   expired: 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300',
 }
 
-export default function DashboardClient({ metrics, chartData, breakdown, recent, todayCustomers, weekCustomers, monthCustomers, allCustomers }: Props) {
+export default function DashboardClient({ metrics, chartData, breakdown, recent, todayAll, weekAll, monthAll, allCustomers }: Props) {
   const now = new Date()
   const maxAmt = Math.max(...chartData.map(d => d.amount), 1)
   const [dateRange, setDateRange] = useState<DateRange>(null)
@@ -144,24 +196,25 @@ export default function DashboardClient({ metrics, chartData, breakdown, recent,
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {[
-            { label: 'Today', customers: todayCustomers, period: 'today' },
-            { label: 'This Week', customers: weekCustomers, period: 'week' },
-            { label: 'This Month', customers: monthCustomers, period: 'month' },
-          ].map(({ label, customers, period }) => {
+            { label: 'Today', data: todayAll, period: 'today' },
+            { label: 'This Week', data: weekAll, period: 'week' },
+            { label: 'This Month', data: monthAll, period: 'month' },
+          ].map(({ label, data, period }) => {
             const now = new Date()
             const dateStr = now.toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })
+            const total = data.customers.length + data.advisory.length + data.portfolio.length + data.technical.length
             return (
               <button
                 key={period}
-                onClick={() => exportExcel(customers, label, `Stockifyy-${period}-${dateStr}.xlsx`)}
-                disabled={customers.length === 0}
+                onClick={() => exportExcel(data, label, `Stockifyy-${period}-${dateStr}.xlsx`)}
+                disabled={total === 0}
                 className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg transition-colors shadow-sm flex-shrink-0"
               >
                 <Download size={13} />
                 <span>{label}</span>
-                {customers.length > 0 && (
+                {total > 0 && (
                   <span className="bg-white/20 text-white text-[10px] font-bold px-1 py-0.5 rounded-full leading-none">
-                    {customers.length}
+                    {total}
                   </span>
                 )}
               </button>

@@ -1,8 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { redirect } from 'next/navigation'
-import { fmtMoney } from '@/lib/utils'
-import { subStatus, SUB_TYPES } from '@/lib/types'
 import DashboardClient from './DashboardClient'
 
 export default async function DashboardPage() {
@@ -25,73 +23,59 @@ export default async function DashboardPage() {
   ])
 
   const safe = customers ?? []
-  const adv = advisory ?? []
+  const adv  = advisory ?? []
   const port = portfolio ?? []
   const tech = technical ?? []
 
   const now = new Date()
-  const todayStr = now.toISOString().slice(0, 10)
-  const monthStr = now.toISOString().slice(0, 7)
-  const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 6)
+  const todayStr   = now.toISOString().slice(0, 10)
+  const monthStr   = now.toISOString().slice(0, 7)
+  const weekAgo    = new Date(now); weekAgo.setDate(weekAgo.getDate() - 6)
   const weekAgoStr = weekAgo.toISOString().slice(0, 10)
 
-  // Customer-only filters (for active/expiring counts)
-  const todayCusts = safe.filter(c => c.subscription_start?.slice(0, 10) === todayStr)
-  const weekCusts  = safe.filter(c => { const d = c.subscription_start?.slice(0, 10); return d && d >= weekAgoStr && d <= todayStr })
-  const monthCusts = safe.filter(c => c.subscription_start?.slice(0, 7) === monthStr)
-  const active     = safe.filter(c => subStatus(c.subscription_end) === 'active')
-  const expiring   = safe.filter(c => subStatus(c.subscription_end) === 'expiring')
+  // Pre-filtered period buckets (for download buttons)
+  const todayAll = {
+    customers: safe.filter(c => c.subscription_start?.slice(0, 10) === todayStr),
+    advisory:  adv.filter(c  => (c.adding_date ?? c.created_at)?.slice(0, 10) === todayStr),
+    portfolio: port.filter(c => c.created_at?.slice(0, 10) === todayStr),
+    technical: tech.filter(c => c.created_at?.slice(0, 10) === todayStr),
+  }
+  const weekAll = {
+    customers: safe.filter(c => { const d = c.subscription_start?.slice(0, 10); return d && d >= weekAgoStr && d <= todayStr }),
+    advisory:  adv.filter(c  => { const d = (c.adding_date ?? c.created_at)?.slice(0, 10); return d && d >= weekAgoStr && d <= todayStr }),
+    portfolio: port.filter(c => { const d = c.created_at?.slice(0, 10); return d && d >= weekAgoStr && d <= todayStr }),
+    technical: tech.filter(c => { const d = c.created_at?.slice(0, 10); return d && d >= weekAgoStr && d <= todayStr }),
+  }
+  const monthAll = {
+    customers: safe.filter(c => c.subscription_start?.slice(0, 7) === monthStr),
+    advisory:  adv.filter(c  => (c.adding_date ?? c.created_at)?.slice(0, 7) === monthStr),
+    portfolio: port.filter(c => c.created_at?.slice(0, 7) === monthStr),
+    technical: tech.filter(c => c.created_at?.slice(0, 7) === monthStr),
+  }
 
-  // Advisory/Portfolio/Technical filtered by period (using created_at / adding_date)
-  const todayAdv   = adv.filter(c  => (c.adding_date ?? c.created_at)?.slice(0, 10) === todayStr)
-  const weekAdv    = adv.filter(c  => { const d = (c.adding_date ?? c.created_at)?.slice(0, 10); return d && d >= weekAgoStr && d <= todayStr })
-  const monthAdv   = adv.filter(c  => (c.adding_date ?? c.created_at)?.slice(0, 7) === monthStr)
-
-  const todayPort  = port.filter(c => c.created_at?.slice(0, 10) === todayStr)
-  const weekPort   = port.filter(c => { const d = c.created_at?.slice(0, 10); return d && d >= weekAgoStr && d <= todayStr })
-  const monthPort  = port.filter(c => c.created_at?.slice(0, 7) === monthStr)
-
-  const todayTech  = tech.filter(c => c.created_at?.slice(0, 10) === todayStr)
-  const weekTech   = tech.filter(c => { const d = c.created_at?.slice(0, 10); return d && d >= weekAgoStr && d <= todayStr })
-  const monthTech  = tech.filter(c => c.created_at?.slice(0, 7) === monthStr)
-
-  const sum = (arr: any[], field = 'amount') => arr.reduce((s, c) => s + (c[field] ?? 0), 0)
-
-  const todayAmt = sum(todayCusts) + sum(todayAdv) + sum(todayPort) + sum(todayTech)
-  const monthAmt = sum(monthCusts) + sum(monthAdv) + sum(monthPort) + sum(monthTech)
-
+  // 30-day chart (all sections combined)
   const days: string[] = []
   for (let i = 29; i >= 0; i--) { const d = new Date(now); d.setDate(d.getDate() - i); days.push(d.toISOString().slice(0, 10)) }
-
-  const chartData = days.map(day => {
-    const custAmt = safe.filter(c => c.subscription_start?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0)
-    const advAmt  = adv.filter(c  => (c.adding_date ?? c.created_at)?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0)
-    const portAmt = port.filter(c => c.created_at?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0)
-    const techAmt = tech.filter(c => c.created_at?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0)
-    return { day, amount: custAmt + advAmt + portAmt + techAmt, isToday: day === todayStr }
-  })
-
-  const breakdown = SUB_TYPES.map(t => ({ type: t, count: safe.filter(c => c.subscription_type === t).length }))
-  const recent = safe.slice(0, 7)
+  const chartData = days.map(day => ({
+    day,
+    isToday: day === todayStr,
+    amount:
+      safe.filter(c => c.subscription_start?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0) +
+      adv.filter(c  => (c.adding_date ?? c.created_at)?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0) +
+      port.filter(c => c.created_at?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0) +
+      tech.filter(c => c.created_at?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0),
+  }))
 
   return (
     <DashboardClient
-      metrics={{
-        todayAmt: fmtMoney(todayAmt),
-        todayCount: todayCusts.length,
-        monthAmt: fmtMoney(monthAmt),
-        monthCount: monthCusts.length,
-        activeCount: active.length,
-        totalCount: safe.length,
-        expiringCount: expiring.length,
-      }}
-      chartData={chartData}
-      breakdown={breakdown}
-      recent={recent}
-      todayAll={{ customers: todayCusts, advisory: todayAdv, portfolio: todayPort, technical: todayTech }}
-      weekAll={{ customers: weekCusts, advisory: weekAdv, portfolio: weekPort, technical: weekTech }}
-      monthAll={{ customers: monthCusts, advisory: monthAdv, portfolio: monthPort, technical: monthTech }}
       allCustomers={safe}
+      allAdvisory={adv}
+      allPortfolio={port}
+      allTechnical={tech}
+      chartData={chartData}
+      todayAll={todayAll}
+      weekAll={weekAll}
+      monthAll={monthAll}
     />
   )
 }

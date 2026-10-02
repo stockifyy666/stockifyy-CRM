@@ -53,26 +53,12 @@ export default async function DashboardPage() {
     technical: tech.filter(c => c.created_at?.slice(0, 7) === monthStr),
   }
 
-  // 30-day chart (all sections combined)
-  const days: string[] = []
-  for (let i = 29; i >= 0; i--) { const d = new Date(now); d.setDate(d.getDate() - i); days.push(d.toISOString().slice(0, 10)) }
-  const chartData = days.map(day => ({
-    day,
-    isToday: day === todayStr,
-    amount:
-      safe.filter(c => c.subscription_start?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0) +
-      adv.filter(c  => (c.adding_date ?? c.created_at)?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0) +
-      port.filter(c => c.created_at?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0) +
-      tech.filter(c => c.created_at?.slice(0, 10) === day).reduce((s, c) => s + (c.amount ?? 0), 0),
-  }))
-
   return (
     <DashboardClient
       allCustomers={safe}
       allAdvisory={adv}
       allPortfolio={port}
       allTechnical={tech}
-      chartData={chartData}
       todayAll={todayAll}
       weekAll={weekAll}
       monthAll={monthAll}

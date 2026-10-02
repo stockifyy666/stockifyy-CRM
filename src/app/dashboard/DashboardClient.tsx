@@ -12,7 +12,6 @@ type SectionTab  = 'overall' | 'customers' | 'advisory' | 'portfolio' | 'technic
 
 interface PeriodData { customers: any[]; advisory: any[]; portfolio: any[]; technical: any[] }
 interface Props {
-  chartData: { day: string; amount: number; isToday: boolean }[]
   allCustomers: any[]; allAdvisory: any[]; allPortfolio: any[]; allTechnical: any[]
   todayAll: PeriodData; weekAll: PeriodData; monthAll: PeriodData
 }
@@ -133,19 +132,54 @@ const SECTION_TABS: { key: SectionTab; label: string; viewHref: string }[] = [
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function DashboardClient({
-  chartData, allCustomers, allAdvisory, allPortfolio, allTechnical,
+  allCustomers, allAdvisory, allPortfolio, allTechnical,
   todayAll, weekAll, monthAll,
 }: Props) {
+  // Use PKT (UTC+5) for date strings so "today" matches DB timestamps
   const now      = new Date()
-  const todayStr = now.toISOString().slice(0, 10)
-  const monthStr = now.toISOString().slice(0, 7)
-  const maxAmt   = Math.max(...chartData.map(d => d.amount), 1)
+  const pktOffset = 5 * 60 * 60 * 1000
+  const pktNow   = new Date(now.getTime() + pktOffset)
+  const todayStr = pktNow.toISOString().slice(0, 10)
+  const monthStr = pktNow.toISOString().slice(0, 7)
 
   const [period,      setPeriod]      = useState<TimePeriod>('this-month')
   const [section,     setSection]     = useState<SectionTab>('overall')
   const [customRange, setCustomRange] = useState<DateRange>(null)
 
   const range = useMemo(() => getRange(period, customRange), [period, customRange])
+
+  // ── 30-day chart (client-side, reacts to section tab) ───────────────────
+  const liveChartData = useMemo(() => {
+    const days30: string[] = []
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now.getTime() + pktOffset)
+      d.setUTCDate(d.getUTCDate() - i)
+      days30.push(d.toISOString().slice(0, 10))
+    }
+    return days30.map(day => {
+      const isToday = day === todayStr
+      let amount = 0
+      if (section === 'advisory') {
+        amount = allAdvisory.filter(c => (c.adding_date ?? c.created_at)?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
+      } else if (section === 'portfolio') {
+        amount = allPortfolio.filter(c => c.created_at?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
+      } else if (section === 'technical') {
+        amount = allTechnical.filter(c => c.created_at?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
+      } else if (section === 'customers') {
+        amount = allCustomers.filter(c => (c.subscription_start ?? c.created_at)?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
+      } else {
+        // overall — all sections
+        amount =
+          allCustomers.filter(c => (c.subscription_start ?? c.created_at)?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0) +
+          allAdvisory.filter(c  => (c.adding_date ?? c.created_at)?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0) +
+          allPortfolio.filter(c => c.created_at?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0) +
+          allTechnical.filter(c => c.created_at?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
+      }
+      return { day, amount, isToday }
+    })
+  }, [section, allCustomers, allAdvisory, allPortfolio, allTechnical, todayStr])
+
+  const maxAmt = Math.max(...liveChartData.map(d => d.amount), 1)
 
   // ── Filtered arrays ──────────────────────────────────────────────────────
   const filtCusts = useMemo(() =>
@@ -591,7 +625,7 @@ export default function DashboardClient({
           <div className="bg-card border border-border rounded-xl shadow-sm p-4 lg:p-5">
             <div className="text-sm font-semibold text-foreground mb-3">30-Day Collections</div>
             <div className="flex items-end gap-0.5 h-14">
-              {chartData.map((d, i) => {
+              {liveChartData.map((d, i) => {
                 const h = d.amount === 0 ? 4 : Math.max((d.amount / maxAmt) * 100, 8)
                 return (
                   <div key={i} className="flex-1 group relative">

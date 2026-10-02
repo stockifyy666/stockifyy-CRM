@@ -624,15 +624,21 @@ export default function DashboardClient({
           {/* 30-day chart */}
           <div className="bg-card border border-border rounded-xl shadow-sm p-4 lg:p-5">
             <div className="text-sm font-semibold text-foreground mb-3">30-Day Collections</div>
-            <div className="flex items-end gap-0.5 h-14">
+            <div className="relative h-24 flex items-end gap-px">
               {liveChartData.map((d, i) => {
-                const h = d.amount === 0 ? 4 : Math.max((d.amount / maxAmt) * 100, 8)
+                const CHART_H = 96 // h-24 = 96px
+                const px = d.amount === 0 ? 2 : Math.max(Math.round((d.amount / maxAmt) * CHART_H), 6)
                 return (
-                  <div key={i} className="flex-1 group relative">
-                    <div className={`w-full rounded-sm transition-opacity ${d.amount === 0 ? 'bg-border' : d.isToday ? 'bg-primary' : 'bg-primary/40 group-hover:bg-primary/70'}`} style={{ height: `${h}%` }} />
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-foreground text-background text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10">
-                      {fmtMoney(d.amount)}
-                    </div>
+                  <div key={i} className="flex-1 flex items-end group">
+                    <div
+                      className={`w-full rounded-sm transition-all ${d.amount === 0 ? 'bg-border' : d.isToday ? 'bg-primary' : 'bg-primary/50 group-hover:bg-primary/80'}`}
+                      style={{ height: `${px}px` }}
+                    />
+                    {d.amount > 0 && (
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-foreground text-background text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10">
+                        {fmtMoney(d.amount)}
+                      </div>
+                    )}
                   </div>
                 )
               })}

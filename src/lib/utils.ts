@@ -29,3 +29,12 @@ export function toLocalInput(iso: string | null | undefined) {
   const d = new Date(iso)
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
+
+// Parse screenshot_url which may be a single URL string or JSON array of URLs
+export function parseScreenshots(url: string | null | undefined): string[] {
+  if (!url) return []
+  if (url.startsWith('[')) {
+    try { return JSON.parse(url) as string[] } catch {}
+  }
+  return [url]
+}

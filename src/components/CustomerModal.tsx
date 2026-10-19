@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { X, Upload } from 'lucide-react'
+import { X, Upload, XCircle } from 'lucide-react'
 import type { Customer } from '@/lib/types'
 import { SUB_TYPES } from '@/lib/types'
-import { toLocalInput } from '@/lib/utils'
+import { toLocalInput, parseScreenshots } from '@/lib/utils'
 
 const CODE_PREFIX: Record<string, string> = {
   'Swing with Stockifyy':  'NC',
@@ -16,17 +16,22 @@ interface Props {
   customer: Customer | null
   customers: Customer[]
   onClose: () => void
-  onSave: (data: Partial<Customer>, file: File | null, invoiceFile: File | null) => Promise<void>
+  onSave: (data: Partial<Customer>, screenshotFiles: File[], keptUrls: string[], invoiceFile: File | null) => Promise<void>
 }
 
 export default function CustomerModal({ customer, customers, onClose, onSave: onSaveProp }: Props) {
   const isEdit = !!customer
   const [saving, setSaving] = useState(false)
-  const [file, setFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<string | null>(customer?.screenshot_url ?? null)
-  const [dragging, setDragging] = useState(false)
+
+  // ── Payment screenshots: existing kept + new files ───────────────────────
+  const [keptUrls, setKeptUrls]       = useState<string[]>(parseScreenshots(customer?.screenshot_url))
+  const [newFiles, setNewFiles]       = useState<File[]>([])
+  const [newPreviews, setNewPreviews] = useState<string[]>([])
+  const [dragging, setDragging]       = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
-  const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
+
+  // ── Invoice ──────────────────────────────────────────────────────────────
+  const [invoiceFile, setInvoiceFile]       = useState<File | null>(null)
   const [invoicePreview, setInvoicePreview] = useState<string | null>(customer?.invoice_url ?? null)
   const [invoiceDragging, setInvoiceDragging] = useState(false)
   const invoiceRef = useRef<HTMLInputElement>(null)
@@ -66,12 +71,21 @@ export default function CustomerModal({ customer, customers, onClose, onSave: on
     })
   }
 
-  function handleFile(f: File) {
-    if (f.size > 5 * 1024 * 1024) return
-    setFile(f)
-    const reader = new FileReader()
-    reader.onload = e => setPreview(e.target?.result as string)
-    reader.readAsDataURL(f)
+  function handleScreenshotFiles(fileList: FileList | null) {
+    if (!fileList) return
+    Array.from(fileList).forEach(f => {
+      if (!f.type.startsWith('image/') || f.size > 5 * 1024 * 1024) return
+      setNewFiles(prev => [...prev, f])
+      const reader = new FileReader()
+      reader.onload = e => setNewPreviews(prev => [...prev, e.target?.result as string])
+      reader.readAsDataURL(f)
+    })
+  }
+
+  function removeKept(url: string) { setKeptUrls(prev => prev.filter(u => u !== url)) }
+  function removeNew(idx: number) {
+    setNewFiles(prev => prev.filter((_, i) => i !== idx))
+    setNewPreviews(prev => prev.filter((_, i) => i !== idx))
   }
 
   function handleInvoiceFile(f: File) {
@@ -95,9 +109,8 @@ export default function CustomerModal({ customer, customers, onClose, onSave: on
       subscription_start: new Date(form.subscription_start).toISOString(),
       subscription_end: new Date(form.subscription_end).toISOString(),
       notes: form.notes.trim() || null,
-      screenshot_url: file ? undefined : (preview ? (customer?.screenshot_url ?? null) : null),
       invoice_url: invoiceFile ? undefined : (invoicePreview ? (customer?.invoice_url ?? null) : null),
-    }, file, invoiceFile)
+    }, newFiles, keptUrls, invoiceFile)
     setSaving(false)
   }
 
@@ -141,21 +154,56 @@ export default function CustomerModal({ customer, customers, onClose, onSave: on
               <textarea className={INPUT} rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any relevant notes…" />
             </Field>
             <div className="sm:col-span-2">
-              <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Payment Screenshot</label>
+              <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                Payment Screenshots
+                {(keptUrls.length + newPreviews.length) > 0 && (
+                  <span className="ml-2 text-primary normal-case font-normal">{keptUrls.length + newPreviews.length} attached</span>
+                )}
+              </label>
+
+              {/* Thumbnail grid */}
+              {(keptUrls.length > 0 || newPreviews.length > 0) && (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+                  {keptUrls.map((url, i) => (
+                    <div key={`kept-${i}`} className="relative group aspect-square">
+                      <img src={url} className="w-full h-full object-cover rounded-lg border border-border" alt={`screenshot ${i + 1}`} />
+                      <button type="button" onClick={() => removeKept(url)}
+                        className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
+                        <XCircle size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {newPreviews.map((src, i) => (
+                    <div key={`new-${i}`} className="relative group aspect-square">
+                      <img src={src} className="w-full h-full object-cover rounded-lg border border-primary/40" alt={`new ${i + 1}`} />
+                      <div className="absolute inset-0 flex items-end p-1 pointer-events-none">
+                        <span className="text-[9px] bg-primary/80 text-white px-1 py-0.5 rounded">New</span>
+                      </div>
+                      <button type="button" onClick={() => removeNew(i)}
+                        className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
+                        <XCircle size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Drop zone */}
               <div
-                className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
+                className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
                 onClick={() => fileRef.current?.click()}
                 onDragOver={e => { e.preventDefault(); setDragging(true) }}
                 onDragLeave={() => setDragging(false)}
-                onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) handleFile(f) }}
+                onDrop={e => { e.preventDefault(); setDragging(false); handleScreenshotFiles(e.dataTransfer.files) }}
               >
-                {preview
-                  ? <img src={preview} className="max-h-40 max-w-full mx-auto rounded-lg border border-border object-contain" alt="preview" />
-                  : <><Upload size={24} className="mx-auto text-muted-foreground/40 mb-2" />
-                    <p className="text-sm text-muted-foreground">Click to upload or drag & drop<br /><span className="text-primary font-semibold">PNG, JPG, WEBP</span> up to 5MB</p></>}
+                <Upload size={20} className="mx-auto text-muted-foreground/40 mb-1.5" />
+                <p className="text-sm text-muted-foreground">
+                  {keptUrls.length + newPreviews.length > 0 ? 'Add more screenshots' : 'Click to upload or drag & drop'}
+                  <br /><span className="text-primary font-semibold">PNG, JPG, WEBP</span> · up to 5 MB each · multiple allowed
+                </p>
               </div>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
-              {preview && <button type="button" className="mt-1.5 text-xs text-destructive hover:text-destructive/80" onClick={() => { setFile(null); setPreview(null) }}>Remove screenshot</button>}
+              <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+                onChange={e => { handleScreenshotFiles(e.target.files); e.target.value = '' }} />
             </div>
 
             <div className="sm:col-span-2">

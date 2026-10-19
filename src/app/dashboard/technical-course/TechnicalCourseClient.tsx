@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useMemo, useRef } from 'react'
-import { Plus, X, BookOpen, Trash2, Pencil, Search, Upload, Eye, Image as ImageIcon } from 'lucide-react'
+import { Plus, X, BookOpen, Trash2, Pencil, Search, Upload, Eye, Image as ImageIcon, XCircle } from 'lucide-react'
 import DateRangeFilter, { type DateRange, isInRange } from '@/components/DateRangeFilter'
 import type { Profile, TechnicalCourseClient as TC } from '@/lib/types'
-import { fmtMoney } from '@/lib/utils'
+import { fmtMoney, parseScreenshots } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Toast, { useToast } from '@/components/Toast'
@@ -33,8 +33,9 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(EMPTY)
-  const [file, setFile] = useState<File | null>(null)
-  const [preview, setPreview] = useState<string | null>(null)
+  const [keptUrls, setKeptUrls]       = useState<string[]>([])
+  const [newFiles, setNewFiles]       = useState<File[]>([])
+  const [newPreviews, setNewPreviews] = useState<string[]>([])
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const canDelete = profile.role === 'admin'
@@ -52,18 +53,27 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })) }
 
-  function handleFile(f: File) {
-    if (f.size > 5 * 1024 * 1024) return
-    setFile(f)
-    const reader = new FileReader()
-    reader.onload = e => setPreview(e.target?.result as string)
-    reader.readAsDataURL(f)
+  function handleScreenshotFiles(fileList: FileList | null) {
+    if (!fileList) return
+    Array.from(fileList).forEach(f => {
+      if (!f.type.startsWith('image/') || f.size > 5 * 1024 * 1024) return
+      setNewFiles(prev => [...prev, f])
+      const reader = new FileReader()
+      reader.onload = e => setNewPreviews(prev => [...prev, e.target?.result as string])
+      reader.readAsDataURL(f)
+    })
+  }
+
+  function removeKept(url: string) { setKeptUrls(prev => prev.filter(u => u !== url)) }
+  function removeNew(idx: number) {
+    setNewFiles(prev => prev.filter((_, i) => i !== idx))
+    setNewPreviews(prev => prev.filter((_, i) => i !== idx))
   }
 
   function openAdd() {
     setEditing(null)
     setForm(EMPTY)
-    setFile(null); setPreview(null)
+    setKeptUrls([]); setNewFiles([]); setNewPreviews([])
     setOpen(true)
   }
   function openEdit(c: TC) {
@@ -74,22 +84,26 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
       installments: c.installments != null ? String(c.installments) : '',
       notes: c.notes ?? '',
     })
-    setFile(null); setPreview(c.screenshot_url)
+    setKeptUrls(parseScreenshots(c.screenshot_url)); setNewFiles([]); setNewPreviews([])
     setOpen(true)
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
-    let screenshot_url = editing?.screenshot_url ?? null
-    if (file) {
-      const ext = file.name.split('.').pop()
-      const path = `tc-${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('payment-screenshots').upload(path, file)
+    const newUrls: string[] = []
+    for (const f of newFiles) {
+      const ext = f.name.split('.').pop()
+      const path = `tc-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: upErr } = await supabase.storage.from('payment-screenshots').upload(path, f)
       if (upErr) { showToast('Screenshot upload failed', 'error'); setSaving(false); return }
       const { data: urlData } = supabase.storage.from('payment-screenshots').getPublicUrl(path)
-      screenshot_url = urlData.publicUrl
+      newUrls.push(urlData.publicUrl)
     }
+    const allUrls = [...keptUrls, ...newUrls]
+    const screenshot_url = allUrls.length === 0 ? null
+      : allUrls.length === 1 ? allUrls[0]
+      : JSON.stringify(allUrls)
     const payload = {
       name: form.name.trim(),
       client_code: form.client_code.trim() || null,
@@ -185,11 +199,15 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                 </div>
               </div>
               <div className="flex items-center gap-2 pt-2 border-t border-border">
-                {c.screenshot_url && (
-                  <button onClick={() => setLightbox(c.screenshot_url!)}>
-                    <img src={c.screenshot_url} className="w-8 h-8 object-cover rounded-lg border border-border" alt="screenshot" />
-                  </button>
-                )}
+                {(() => {
+                  const urls = parseScreenshots(c.screenshot_url)
+                  return urls.length > 0
+                    ? <button onClick={() => setLightbox(urls[0])} className="relative flex-shrink-0">
+                        <img src={urls[0]} className="w-8 h-8 object-cover rounded-lg border border-border" alt="screenshot" />
+                        {urls.length > 1 && <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">+{urls.length - 1}</span>}
+                      </button>
+                    : null
+                })()}
                 <div className="flex gap-2 ml-auto">
                   <button onClick={() => openEdit(c)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors"><Pencil size={12} /> Edit</button>
                   {canDelete && <button onClick={() => setConfirmId(c.id)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"><Trash2 size={12} /></button>}
@@ -224,11 +242,15 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                   <td className="px-4 py-3 text-sm font-bold text-foreground tabular-nums whitespace-nowrap">{fmtMoney(c.amount)}</td>
                   <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{c.installments != null ? c.installments : '—'}</td>
                   <td className="px-4 py-3">
-                    {c.screenshot_url
-                      ? <button onClick={() => setLightbox(c.screenshot_url!)} className="hover:opacity-75 transition-opacity">
-                          <img src={c.screenshot_url} className="w-9 h-9 object-cover rounded-lg border border-border" alt="screenshot" />
-                        </button>
-                      : <span className="text-muted-foreground/30"><ImageIcon size={18} /></span>}
+                    {(() => {
+                      const urls = parseScreenshots(c.screenshot_url)
+                      return urls.length > 0
+                        ? <button onClick={() => setLightbox(urls[0])} className="hover:opacity-75 transition-opacity relative">
+                            <img src={urls[0]} className="w-9 h-9 object-cover rounded-lg border border-border" alt="screenshot" />
+                            {urls.length > 1 && <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">+{urls.length - 1}</span>}
+                          </button>
+                        : <span className="text-muted-foreground/30"><ImageIcon size={18} /></span>
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{(c as any).added_by_profile?.name ?? '—'}</td>
                   <td className="px-4 py-3">
@@ -265,20 +287,56 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
               </F>
               <F label="Notes" className="sm:col-span-2"><textarea className={INPUT} rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any notes…" /></F>
               <div className="sm:col-span-2">
-                <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Payment Screenshot</label>
+                <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+                  Payment Screenshots
+                  {(keptUrls.length + newPreviews.length) > 0 && (
+                    <span className="ml-2 text-primary normal-case font-normal">{keptUrls.length + newPreviews.length} attached</span>
+                  )}
+                </label>
+
+                {/* Thumbnail grid */}
+                {(keptUrls.length > 0 || newPreviews.length > 0) && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
+                    {keptUrls.map((url, i) => (
+                      <div key={`kept-${i}`} className="relative group aspect-square">
+                        <img src={url} className="w-full h-full object-cover rounded-lg border border-border" alt={`screenshot ${i + 1}`} />
+                        <button type="button" onClick={() => removeKept(url)}
+                          className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
+                          <XCircle size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    {newPreviews.map((src, i) => (
+                      <div key={`new-${i}`} className="relative group aspect-square">
+                        <img src={src} className="w-full h-full object-cover rounded-lg border border-primary/40" alt={`new ${i + 1}`} />
+                        <div className="absolute inset-0 flex items-end p-1 pointer-events-none">
+                          <span className="text-[9px] bg-primary/80 text-white px-1 py-0.5 rounded">New</span>
+                        </div>
+                        <button type="button" onClick={() => removeNew(i)}
+                          className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
+                          <XCircle size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Drop zone */}
                 <div
-                  className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
+                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
                   onClick={() => fileRef.current?.click()}
                   onDragOver={e => { e.preventDefault(); setDragging(true) }}
                   onDragLeave={() => setDragging(false)}
-                  onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) handleFile(f) }}
+                  onDrop={e => { e.preventDefault(); setDragging(false); handleScreenshotFiles(e.dataTransfer.files) }}
                 >
-                  {preview
-                    ? <img src={preview} className="max-h-40 max-w-full mx-auto rounded-lg border border-border object-contain" alt="preview" />
-                    : <><Upload size={24} className="mx-auto text-muted-foreground/40 mb-2" /><p className="text-sm text-muted-foreground">Click to upload or drag & drop<br /><span className="text-primary font-semibold">PNG, JPG, WEBP</span> up to 5MB</p></>}
+                  <Upload size={20} className="mx-auto text-muted-foreground/40 mb-1.5" />
+                  <p className="text-sm text-muted-foreground">
+                    {keptUrls.length + newPreviews.length > 0 ? 'Add more screenshots' : 'Click to upload or drag & drop'}
+                    <br /><span className="text-primary font-semibold">PNG, JPG, WEBP</span> · up to 5 MB each · multiple allowed
+                  </p>
                 </div>
-                <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
-                {preview && <button type="button" className="mt-1.5 text-xs text-destructive hover:text-destructive/80" onClick={() => { setFile(null); setPreview(null) }}>Remove screenshot</button>}
+                <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+                  onChange={e => { handleScreenshotFiles(e.target.files); e.target.value = '' }} />
               </div>
               <div className="sm:col-span-2 flex gap-3 justify-end pt-2">
                 <button type="button" onClick={() => setOpen(false)} className="px-4 py-2 text-sm font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors">Cancel</button>

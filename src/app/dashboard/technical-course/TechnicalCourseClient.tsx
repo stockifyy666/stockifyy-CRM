@@ -29,6 +29,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
   })
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<TC | null>(null)
+  const [viewClient, setViewClient] = useState<TC | null>(null)
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -209,6 +210,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                     : null
                 })()}
                 <div className="flex gap-2 ml-auto">
+                  <button onClick={() => setViewClient(c)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors"><Eye size={12} /> View</button>
                   <button onClick={() => openEdit(c)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors"><Pencil size={12} /> Edit</button>
                   {canDelete && <button onClick={() => setConfirmId(c.id)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"><Trash2 size={12} /></button>}
                 </div>
@@ -255,6 +257,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                   <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{(c as any).added_by_profile?.name ?? '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
+                      <button onClick={() => setViewClient(c)} className="px-2 py-1 text-xs font-semibold text-foreground border border-border rounded-md hover:bg-muted transition-colors flex items-center gap-1"><Eye size={11} /> View</button>
                       <button onClick={() => openEdit(c)} className="px-2 py-1 text-xs font-semibold text-foreground border border-border rounded-md hover:bg-muted transition-colors">Edit</button>
                       {canDelete && <button onClick={() => setConfirmId(c.id)} className="px-2 py-1 text-xs font-semibold text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors">Del</button>}
                     </div>
@@ -350,12 +353,59 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
       )}
 
       {confirmId && <ConfirmDialog title="Remove client?" message="This will permanently delete this client." onConfirm={() => { handleDelete(confirmId); setConfirmId(null) }} onCancel={() => setConfirmId(null)} />}
+
+      {/* View Detail Modal */}
+      {viewClient && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 sm:p-6 overflow-y-auto" onClick={() => setViewClient(null)}>
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg mt-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h2 className="text-lg font-bold text-foreground tracking-tight">Client Details</h2>
+              <button onClick={() => setViewClient(null)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors"><X size={15} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <Row label="Full Name" value={viewClient.name} />
+              <Row label="Client Code" value={viewClient.client_code ?? '—'} />
+              <Row label="Mobile" value={viewClient.mobile} />
+              <Row label="Amount" value={fmtMoney(viewClient.amount)} />
+              <Row label="Installments" value={viewClient.installments != null ? String(viewClient.installments) : '—'} />
+              {viewClient.notes && <Row label="Notes" value={viewClient.notes} />}
+              {(() => {
+                const urls = parseScreenshots(viewClient.screenshot_url)
+                return urls.length > 0 ? (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Payment Screenshots</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {urls.map((url, i) => (
+                        <img key={i} src={url} className="aspect-square w-full object-cover rounded-lg border border-border cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setLightbox(url)} alt={`screenshot ${i + 1}`} />
+                      ))}
+                    </div>
+                  </div>
+                ) : null
+              })()}
+            </div>
+            <div className="px-6 py-4 border-t border-border flex justify-end gap-2 bg-muted/20 rounded-b-xl">
+              <button onClick={() => { setViewClient(null); openEdit(viewClient) }} className="px-4 py-2 text-sm font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors flex items-center gap-1.5"><Pencil size={13} /> Edit</button>
+              <button onClick={() => setViewClient(null)} className="px-4 py-2 text-sm font-semibold bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {lightbox && (
         <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
           <button className="absolute top-4 right-4 text-white/60 hover:text-white text-2xl">✕</button>
           <img src={lightbox} className="max-w-full max-h-[90vh] rounded-lg" alt="screenshot" onClick={e => e.stopPropagation()} />
         </div>
       )}
+    </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-3">
+      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider w-28 flex-shrink-0 pt-0.5">{label}</span>
+      <span className="text-sm text-foreground">{value}</span>
     </div>
   )
 }

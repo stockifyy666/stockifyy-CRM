@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { X, Send } from 'lucide-react'
 import type { Customer, Profile, Comment } from '@/lib/types'
 import { subStatus, SUB_TYPES } from '@/lib/types'
-import { fmt, fmtMoney, parseScreenshots } from '@/lib/utils'
+import { fmt, fmtMoney } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 
 const TYPE_PILL: Record<string, string> = {
@@ -35,7 +35,7 @@ export default function CustomerDetail({ customer: c, profile, onClose, onEdit, 
   const [comments, setComments] = useState<Comment[]>([])
   const [commentText, setCommentText] = useState('')
   const [posting, setPosting] = useState(false)
-  const [lightbox, setLightbox] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState(false)
   const [invoiceLightbox, setInvoiceLightbox] = useState(false)
   const st = subStatus(c.subscription_end)
   const canComment = profile.role === 'admin' || profile.role === 'finance'
@@ -114,17 +114,10 @@ export default function CustomerDetail({ customer: c, profile, onClose, onEdit, 
 
           {/* Screenshot */}
           <div className="border-t border-border pt-5">
-            <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Payment Screenshots</label>
-            {(() => {
-              const urls = parseScreenshots(c.screenshot_url)
-              return urls.length > 0
-                ? <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {urls.map((url, i) => (
-                      <img key={i} src={url} className="aspect-square w-full object-cover rounded-lg border border-border cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setLightbox(url)} alt={`Payment screenshot ${i + 1}`} />
-                    ))}
-                  </div>
-                : <p className="text-sm text-muted-foreground">No screenshot uploaded</p>
-            })()}
+            <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">Payment Screenshot</label>
+            {c.screenshot_url
+              ? <img src={c.screenshot_url} className="max-h-48 rounded-xl border border-border object-contain cursor-zoom-in hover:opacity-90 transition-opacity" onClick={() => setLightbox(true)} alt="Payment screenshot" />
+              : <p className="text-sm text-muted-foreground">No screenshot uploaded</p>}
           </div>
 
           {/* Invoice */}
@@ -189,10 +182,10 @@ export default function CustomerDetail({ customer: c, profile, onClose, onEdit, 
       </div>
 
       {/* Lightbox */}
-      {lightbox && (
-        <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-5" onClick={() => setLightbox(null)}>
+      {lightbox && c.screenshot_url && (
+        <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center p-5" onClick={() => setLightbox(false)}>
           <button className="absolute top-5 right-5 text-white/60 hover:text-white text-2xl font-light">✕</button>
-          <img src={lightbox} className="max-w-full max-h-[90vh] rounded-lg" alt="Payment screenshot" onClick={e => e.stopPropagation()} />
+          <img src={c.screenshot_url} className="max-w-full max-h-[90vh] rounded-lg" alt="Payment screenshot" onClick={e => e.stopPropagation()} />
         </div>
       )}
       {invoiceLightbox && c.invoice_url && (

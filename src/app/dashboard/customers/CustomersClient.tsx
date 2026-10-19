@@ -5,7 +5,7 @@ import { Plus, Search, Image as ImageIcon, Eye, Pencil, Trash2, RefreshCw, Uploa
 import type { Customer, Profile } from '@/lib/types'
 import { subStatus, SUB_TYPES } from '@/lib/types'
 import DateRangeFilter, { type DateRange, isInRange } from '@/components/DateRangeFilter'
-import { fmtMoney, fmt, parseScreenshots } from '@/lib/utils'
+import { fmtMoney, fmt } from '@/lib/utils'
 import CustomerModal from '@/components/CustomerModal'
 import CustomerDetail from '@/components/CustomerDetail'
 import ConfirmDialog from '@/components/ConfirmDialog'
@@ -122,22 +122,16 @@ export default function CustomersClient({ customers: initial, profile }: { custo
     return matchQ && matchT && matchS && (filterMonth ? matchM : matchD)
   }), [customers, search, filterType, filterStatus, filterMonth, dateRange])
 
-  async function handleSave(data: Partial<Customer>, screenshotFiles: File[], keptUrls: string[], invoiceFile: File | null) {
-    // Upload all new screenshot files
-    const newUrls: string[] = []
-    for (const f of screenshotFiles) {
-      const ext = f.name.split('.').pop()
-      const path = `ss-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-      const { error: upErr } = await supabase.storage.from('payment-screenshots').upload(path, f)
+  async function handleSave(data: Partial<Customer>, screenshotFile: File | null, invoiceFile: File | null) {
+    let screenshot_url = data.screenshot_url ?? null
+    if (screenshotFile) {
+      const ext = screenshotFile.name.split('.').pop()
+      const path = `${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('payment-screenshots').upload(path, screenshotFile)
       if (upErr) { showToast('Screenshot upload failed', 'error'); return }
       const { data: urlData } = supabase.storage.from('payment-screenshots').getPublicUrl(path)
-      newUrls.push(urlData.publicUrl)
+      screenshot_url = urlData.publicUrl
     }
-    const allUrls = [...keptUrls, ...newUrls]
-    const screenshot_url = allUrls.length === 0 ? null
-      : allUrls.length === 1 ? allUrls[0]
-      : JSON.stringify(allUrls)
-
     let invoice_url = data.invoice_url ?? null
     if (invoiceFile) {
       const ext = invoiceFile.name.split('.').pop()
@@ -273,15 +267,11 @@ export default function CustomersClient({ customers: initial, profile }: { custo
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pt-3 border-t border-border">
-                  {(() => {
-                    const urls = parseScreenshots(c.screenshot_url)
-                    return urls.length > 0
-                      ? <button onClick={() => setLightbox(urls[0])} className="flex-shrink-0 relative" title="Payment screenshot">
-                          <img src={urls[0]} className="w-8 h-8 object-cover rounded-lg border border-border" alt="screenshot" />
-                          {urls.length > 1 && <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">+{urls.length - 1}</span>}
-                        </button>
-                      : null
-                  })()}
+                  {c.screenshot_url && (
+                    <button onClick={() => setLightbox(c.screenshot_url!)} className="flex-shrink-0" title="Payment screenshot">
+                      <img src={c.screenshot_url} className="w-8 h-8 object-cover rounded-lg border border-border" alt="screenshot" />
+                    </button>
+                  )}
                   {c.invoice_url && (
                     <button onClick={() => setLightbox(c.invoice_url!)} className="flex-shrink-0" title="Invoice">
                       <img src={c.invoice_url} className="w-8 h-8 object-cover rounded-lg border border-indigo-300 dark:border-indigo-700" alt="invoice" />
@@ -347,15 +337,11 @@ export default function CustomersClient({ customers: initial, profile }: { custo
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_PILL[st]}`}>{STATUS_LABEL[st]}</span>
                     </td>
                     <td className="px-4 py-3">
-                      {(() => {
-                        const urls = parseScreenshots(c.screenshot_url)
-                        return urls.length > 0
-                          ? <button onClick={() => setLightbox(urls[0])} className="hover:opacity-75 transition-opacity relative">
-                              <img src={urls[0]} className="w-9 h-9 object-cover rounded-lg border border-border" alt="screenshot" />
-                              {urls.length > 1 && <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">+{urls.length - 1}</span>}
-                            </button>
-                          : <span className="text-muted-foreground/30"><ImageIcon size={18} /></span>
-                      })()}
+                      {c.screenshot_url
+                        ? <button onClick={() => setLightbox(c.screenshot_url!)} className="hover:opacity-75 transition-opacity">
+                            <img src={c.screenshot_url} className="w-9 h-9 object-cover rounded-lg border border-border" alt="screenshot" />
+                          </button>
+                        : <span className="text-muted-foreground/30"><ImageIcon size={18} /></span>}
                     </td>
                     <td className="px-4 py-3">
                       {c.invoice_url

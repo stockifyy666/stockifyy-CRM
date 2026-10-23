@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useMemo, useRef } from 'react'
-import { Plus, X, BookOpen, Trash2, Pencil, Search, Upload, Eye, Image as ImageIcon, XCircle } from 'lucide-react'
+import { Plus, X, BookOpen, Trash2, Pencil, Search, Upload, Eye, Image as ImageIcon, XCircle, CreditCard } from 'lucide-react'
 import DateRangeFilter, { type DateRange, isInRange } from '@/components/DateRangeFilter'
-import type { Profile, TechnicalCourseClient as TC } from '@/lib/types'
-import { fmtMoney, parseScreenshots } from '@/lib/utils'
+import type { Profile, TechnicalCourseClient as TC, TechnicalInstallment } from '@/lib/types'
+import { fmtMoney, fmtDate, parseScreenshots } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import Toast, { useToast } from '@/components/Toast'
@@ -12,7 +12,8 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 
 const INPUT = 'w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:border-ring focus:ring-1 focus:ring-ring bg-card text-foreground placeholder:text-muted-foreground transition-colors'
 
-const EMPTY = { name: '', client_code: '', mobile: '', amount: '', installments: '', notes: '' }
+const todayDate = new Date().toISOString().slice(0, 10)
+const EMPTY = { name: '', client_code: '', mobile: '', amount: '', installments: '', adding_date: todayDate, notes: '' }
 
 export default function TechnicalCourseClient({ clients: initial, profile }: { clients: TC[]; profile: Profile }) {
   const router = useRouter()
@@ -27,11 +28,10 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
     const y = new Date().getFullYear()
     return `${y}-${String(i + 1).padStart(2, '0')}`
   })
+
+  // ── Add/Edit modal ──
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<TC | null>(null)
-  const [viewClient, setViewClient] = useState<TC | null>(null)
-  const [confirmId, setConfirmId] = useState<string | null>(null)
-  const [lightbox, setLightbox] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(EMPTY)
   const [keptUrls, setKeptUrls]       = useState<string[]>([])
@@ -39,13 +39,32 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
   const [newPreviews, setNewPreviews] = useState<string[]>([])
   const [dragging, setDragging] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // ── View detail modal ──
+  const [viewClient, setViewClient] = useState<TC | null>(null)
+  const [installments, setInstallments] = useState<TechnicalInstallment[]>([])
+  const [loadingInst, setLoadingInst] = useState(false)
+
+  // ── Add installment payment modal ──
+  const [instModal, setInstModal] = useState<TC | null>(null)
+  const [instForm, setInstForm] = useState({ installment_no: '', amount: '', paid_date: todayDate, notes: '' })
+  const [instFile, setInstFile] = useState<File | null>(null)
+  const [instPreview, setInstPreview] = useState<string | null>(null)
+  const [instDragging, setInstDragging] = useState(false)
+  const [instSaving, setInstSaving] = useState(false)
+  const instFileRef = useRef<HTMLInputElement>(null)
+
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<string | null>(null)
   const canDelete = profile.role === 'admin'
 
+  // ── Filter: use adding_date if set, else created_at ──
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     return clients.filter(c => {
       const matchQ = !q || c.name.toLowerCase().includes(q) || c.mobile.includes(q) || (c.client_code ?? '').toLowerCase().includes(q)
-      const matchD = filterMonth ? c.created_at?.slice(0, 7) === filterMonth : isInRange(c.created_at, dateRange)
+      const dateField = c.adding_date ?? c.created_at
+      const matchD = filterMonth ? dateField?.slice(0, 7) === filterMonth : isInRange(dateField, dateRange)
       return matchQ && matchD
     })
   }, [clients, search, filterMonth, dateRange])
@@ -62,7 +81,6 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
       reader.readAsDataURL(f)
     })
   }
-
   function removeKept(url: string) { setKeptUrls(prev => prev.filter(u => u !== url)) }
   function removeNew(idx: number) {
     setNewFiles(prev => prev.filter((_, i) => i !== idx))
@@ -71,7 +89,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
 
   function openAdd() {
     setEditing(null)
-    setForm(EMPTY)
+    setForm({ ...EMPTY, adding_date: new Date().toISOString().slice(0, 10) })
     setKeptUrls([]); setNewFiles([]); setNewPreviews([])
     setOpen(true)
   }
@@ -81,10 +99,70 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
       name: c.name, client_code: c.client_code ?? '', mobile: c.mobile,
       amount: String(c.amount),
       installments: c.installments != null ? String(c.installments) : '',
+      adding_date: c.adding_date ?? c.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
       notes: c.notes ?? '',
     })
     setKeptUrls(parseScreenshots(c.screenshot_url)); setNewFiles([]); setNewPreviews([])
     setOpen(true)
+  }
+
+  async function openView(c: TC) {
+    setViewClient(c)
+    setLoadingInst(true)
+    const { data } = await supabase
+      .from('technical_installments')
+      .select('*')
+      .eq('client_id', c.id)
+      .order('installment_no')
+    setInstallments(data ?? [])
+    setLoadingInst(false)
+  }
+
+  function openInstModal(c: TC) {
+    setInstModal(c)
+    const nextNo = (c.installments ?? 1)
+    setInstForm({ installment_no: String(nextNo), amount: '', paid_date: new Date().toISOString().slice(0, 10), notes: '' })
+    setInstFile(null); setInstPreview(null)
+  }
+
+  function handleInstFile(f: File) {
+    if (f.size > 5 * 1024 * 1024) return
+    setInstFile(f)
+    const reader = new FileReader()
+    reader.onload = e => setInstPreview(e.target?.result as string)
+    reader.readAsDataURL(f)
+  }
+
+  async function handleInstSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!instModal) return
+    setInstSaving(true)
+    let screenshot_url: string | null = null
+    if (instFile) {
+      const ext = instFile.name.split('.').pop()
+      const path = `inst-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { error: upErr } = await supabase.storage.from('payment-screenshots').upload(path, instFile)
+      if (upErr) { showToast('Screenshot upload failed', 'error'); setInstSaving(false); return }
+      const { data: urlData } = supabase.storage.from('payment-screenshots').getPublicUrl(path)
+      screenshot_url = urlData.publicUrl
+    }
+    const { data, error } = await supabase.from('technical_installments').insert({
+      client_id: instModal.id,
+      installment_no: parseInt(instForm.installment_no),
+      amount: parseFloat(instForm.amount),
+      paid_date: instForm.paid_date,
+      notes: instForm.notes.trim() || null,
+      screenshot_url,
+      added_by: profile.id,
+    }).select('*').single()
+    if (error) { showToast('Failed to save installment', 'error'); setInstSaving(false); return }
+    showToast('Installment payment recorded', 'success')
+    setInstSaving(false)
+    setInstModal(null)
+    // refresh installments if view modal is open for same client
+    if (viewClient?.id === instModal.id) {
+      setInstallments(prev => [...prev, data].sort((a, b) => a.installment_no - b.installment_no))
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -109,6 +187,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
       mobile: form.mobile.trim(),
       amount: parseFloat(form.amount),
       installments: form.installments !== '' ? parseInt(form.installments) : null,
+      adding_date: form.adding_date || null,
       notes: form.notes.trim() || null,
       screenshot_url,
     }
@@ -156,7 +235,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
       <DateRangeFilter
         value={filterMonth ? null : dateRange}
         onChange={r => { setFilterMonth(''); setDateRange(r) }}
-        label="Filter by date added:"
+        label="Filter by payment date:"
       />
       <div className="mb-4">
         <select value={filterMonth} onChange={e => { setFilterMonth(e.target.value); setDateRange(null) }}
@@ -169,7 +248,6 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
         </select>
       </div>
 
-      {/* Search */}
       <div className="relative mb-4">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <input type="text" placeholder="Search by name, phone or client code…" value={search} onChange={e => setSearch(e.target.value)}
@@ -192,9 +270,11 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                   <div className="font-semibold text-foreground">{c.name}</div>
                   {c.client_code && <div className="text-xs font-mono text-primary">{c.client_code}</div>}
                   <div className="text-sm text-muted-foreground">{c.mobile}</div>
+                  {c.adding_date && <div className="text-xs text-muted-foreground">{fmtDate(c.adding_date)}</div>}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <div className="font-bold text-foreground tabular-nums">{fmtMoney(c.amount)}</div>
+                  {c.installments != null && <div className="text-xs text-muted-foreground">{c.installments} installments</div>}
                 </div>
               </div>
               <div className="flex items-center gap-2 pt-2 border-t border-border">
@@ -207,10 +287,13 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                       </button>
                     : null
                 })()}
-                <div className="flex gap-2 ml-auto">
-                  <button onClick={() => setViewClient(c)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors"><Eye size={12} /> View</button>
-                  <button onClick={() => openEdit(c)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors"><Pencil size={12} /> Edit</button>
-                  {canDelete && <button onClick={() => setConfirmId(c.id)} className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"><Trash2 size={12} /></button>}
+                <div className="flex gap-1.5 ml-auto flex-wrap justify-end">
+                  <button onClick={() => openView(c)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors"><Eye size={12} /> View</button>
+                  {c.installments != null && c.installments > 0 && (
+                    <button onClick={() => openInstModal(c)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 rounded-lg hover:bg-amber-100 transition-colors"><CreditCard size={12} /> Pay</button>
+                  )}
+                  <button onClick={() => openEdit(c)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors"><Pencil size={12} /> Edit</button>
+                  {canDelete && <button onClick={() => setConfirmId(c.id)} className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors"><Trash2 size={12} /></button>}
                 </div>
               </div>
             </div>
@@ -224,7 +307,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
           <table className="w-full min-w-max">
             <thead>
               <tr className="bg-muted/50">
-                {['#', 'Name', 'Client Code', 'Mobile', 'Amount', 'Installments', 'Screenshot', 'Added By', 'Actions'].map(h => (
+                {['#', 'Name', 'Client Code', 'Mobile', 'Payment Date', 'Amount', 'Installments', 'Screenshot', 'Added By', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -239,6 +322,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                   </td>
                   <td className="px-4 py-3 text-sm font-mono text-foreground whitespace-nowrap">{c.client_code ?? '—'}</td>
                   <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{c.mobile}</td>
+                  <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{c.adding_date ? fmtDate(c.adding_date) : fmtDate(c.created_at)}</td>
                   <td className="px-4 py-3 text-sm font-bold text-foreground tabular-nums whitespace-nowrap">{fmtMoney(c.amount)}</td>
                   <td className="px-4 py-3 text-sm text-foreground whitespace-nowrap">{c.installments != null ? c.installments : '—'}</td>
                   <td className="px-4 py-3">
@@ -255,7 +339,10 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                   <td className="px-4 py-3 text-sm text-muted-foreground whitespace-nowrap">{(c as any).added_by_profile?.name ?? '—'}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => setViewClient(c)} className="px-2 py-1 text-xs font-semibold text-foreground border border-border rounded-md hover:bg-muted transition-colors flex items-center gap-1"><Eye size={11} /> View</button>
+                      <button onClick={() => openView(c)} className="px-2 py-1 text-xs font-semibold text-foreground border border-border rounded-md hover:bg-muted transition-colors flex items-center gap-1"><Eye size={11} /> View</button>
+                      {c.installments != null && c.installments > 0 && (
+                        <button onClick={() => openInstModal(c)} className="px-2 py-1 text-xs font-semibold text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 rounded-md hover:bg-amber-100 transition-colors flex items-center gap-1"><CreditCard size={11} /> Pay</button>
+                      )}
                       <button onClick={() => openEdit(c)} className="px-2 py-1 text-xs font-semibold text-foreground border border-border rounded-md hover:bg-muted transition-colors">Edit</button>
                       {canDelete && <button onClick={() => setConfirmId(c.id)} className="px-2 py-1 text-xs font-semibold text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors">Del</button>}
                     </div>
@@ -267,7 +354,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
         </div>
       )}
 
-      {/* Modal */}
+      {/* Add/Edit Modal */}
       {open && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 overflow-y-auto">
           <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl mt-4">
@@ -279,11 +366,14 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
               <F label="Full Name" required><input className={INPUT} value={form.name} onChange={e => set('name', e.target.value)} placeholder="Client full name" required /></F>
               <F label="Client Code"><input className={INPUT} value={form.client_code} onChange={e => set('client_code', e.target.value)} placeholder="e.g. TC-001 (optional)" /></F>
               <F label="Mobile Number" required><input className={INPUT} value={form.mobile} onChange={e => set('mobile', e.target.value)} placeholder="+92 XXXXXXXXXX" required /></F>
+              <F label="Payment Date" required>
+                <input className={INPUT} type="date" value={form.adding_date} onChange={e => set('adding_date', e.target.value)} required />
+              </F>
               <F label="Payment Amount (Rs)" required><input className={INPUT} type="number" min="0" step="0.01" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00" required /></F>
               <F label="No. of Installments">
                 <select className={INPUT} value={form.installments} onChange={e => set('installments', e.target.value)}>
-                  <option value="">Select…</option>
-                  {[0,1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
+                  <option value="">None / Full payment</option>
+                  {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n} installment{n > 1 ? 's' : ''}</option>)}
                 </select>
               </F>
               <F label="Notes" className="sm:col-span-2"><textarea className={INPUT} rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any notes…" /></F>
@@ -294,35 +384,23 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                     <span className="ml-2 text-primary normal-case font-normal">{keptUrls.length + newPreviews.length} attached</span>
                   )}
                 </label>
-
-                {/* Thumbnail grid */}
                 {(keptUrls.length > 0 || newPreviews.length > 0) && (
                   <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 mb-3">
                     {keptUrls.map((url, i) => (
                       <div key={`kept-${i}`} className="relative group aspect-square">
                         <img src={url} className="w-full h-full object-cover rounded-lg border border-border" alt={`screenshot ${i + 1}`} />
-                        <button type="button" onClick={() => removeKept(url)}
-                          className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
-                          <XCircle size={14} />
-                        </button>
+                        <button type="button" onClick={() => removeKept(url)} className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"><XCircle size={14} /></button>
                       </div>
                     ))}
                     {newPreviews.map((src, i) => (
                       <div key={`new-${i}`} className="relative group aspect-square">
                         <img src={src} className="w-full h-full object-cover rounded-lg border border-primary/40" alt={`new ${i + 1}`} />
-                        <div className="absolute inset-0 flex items-end p-1 pointer-events-none">
-                          <span className="text-[9px] bg-primary/80 text-white px-1 py-0.5 rounded">New</span>
-                        </div>
-                        <button type="button" onClick={() => removeNew(i)}
-                          className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm">
-                          <XCircle size={14} />
-                        </button>
+                        <div className="absolute inset-0 flex items-end p-1 pointer-events-none"><span className="text-[9px] bg-primary/80 text-white px-1 py-0.5 rounded">New</span></div>
+                        <button type="button" onClick={() => removeNew(i)} className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"><XCircle size={14} /></button>
                       </div>
                     ))}
                   </div>
                 )}
-
-                {/* Drop zone */}
                 <div
                   className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
                   onClick={() => fileRef.current?.click()}
@@ -336,13 +414,68 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
                     <br /><span className="text-primary font-semibold">PNG, JPG, WEBP</span> · up to 5 MB each · multiple allowed
                   </p>
                 </div>
-                <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
-                  onChange={e => { handleScreenshotFiles(e.target.files); e.target.value = '' }} />
+                <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => { handleScreenshotFiles(e.target.files); e.target.value = '' }} />
               </div>
               <div className="sm:col-span-2 flex gap-3 justify-end pt-2">
                 <button type="button" onClick={() => setOpen(false)} className="px-4 py-2 text-sm font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors">Cancel</button>
                 <button type="submit" disabled={saving} className="px-5 py-2 text-sm font-semibold bg-primary hover:bg-primary/90 disabled:opacity-60 text-primary-foreground rounded-lg transition-colors">
                   {saving ? 'Saving…' : editing ? 'Update' : 'Add Client'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Installment Payment Modal */}
+      {instModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg mt-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div>
+                <h2 className="text-lg font-bold text-foreground">Record Installment Payment</h2>
+                <p className="text-sm text-muted-foreground">{instModal.name}</p>
+              </div>
+              <button onClick={() => setInstModal(null)} className="w-8 h-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted"><X size={15} /></button>
+            </div>
+            <form onSubmit={handleInstSubmit} className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <F label="Installment #" required>
+                <select className={INPUT} value={instForm.installment_no} onChange={e => setInstForm(f => ({ ...f, installment_no: e.target.value }))} required>
+                  <option value="">Select…</option>
+                  {Array.from({ length: instModal.installments ?? 1 }, (_, i) => i + 1).map(n => (
+                    <option key={n} value={n}>Installment {n}</option>
+                  ))}
+                </select>
+              </F>
+              <F label="Payment Date" required>
+                <input className={INPUT} type="date" value={instForm.paid_date} onChange={e => setInstForm(f => ({ ...f, paid_date: e.target.value }))} required />
+              </F>
+              <F label="Amount (Rs)" required>
+                <input className={INPUT} type="number" min="0" step="0.01" value={instForm.amount} onChange={e => setInstForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" required />
+              </F>
+              <F label="Notes">
+                <input className={INPUT} value={instForm.notes} onChange={e => setInstForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes" />
+              </F>
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Payment Screenshot</label>
+                <div
+                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-all ${instDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}`}
+                  onClick={() => instFileRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); setInstDragging(true) }}
+                  onDragLeave={() => setInstDragging(false)}
+                  onDrop={e => { e.preventDefault(); setInstDragging(false); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) handleInstFile(f) }}
+                >
+                  {instPreview
+                    ? <img src={instPreview} className="max-h-32 max-w-full mx-auto rounded-lg border border-border object-contain" alt="preview" />
+                    : <><Upload size={20} className="mx-auto text-muted-foreground/40 mb-1.5" /><p className="text-sm text-muted-foreground">Click or drag & drop<br /><span className="text-primary font-semibold">PNG, JPG, WEBP</span> up to 5MB</p></>}
+                </div>
+                <input ref={instFileRef} type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleInstFile(f) }} />
+                {instPreview && <button type="button" className="mt-1 text-xs text-destructive" onClick={() => { setInstFile(null); setInstPreview(null) }}>Remove</button>}
+              </div>
+              <div className="sm:col-span-2 flex gap-3 justify-end pt-2">
+                <button type="button" onClick={() => setInstModal(null)} className="px-4 py-2 text-sm font-semibold text-foreground border border-border rounded-lg hover:bg-muted transition-colors">Cancel</button>
+                <button type="submit" disabled={instSaving} className="px-5 py-2 text-sm font-semibold bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white rounded-lg transition-colors">
+                  {instSaving ? 'Saving…' : 'Record Payment'}
                 </button>
               </div>
             </form>
@@ -364,13 +497,49 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
               <Row label="Full Name" value={viewClient.name} />
               <Row label="Client Code" value={viewClient.client_code ?? '—'} />
               <Row label="Mobile" value={viewClient.mobile} />
+              <Row label="Payment Date" value={viewClient.adding_date ? fmtDate(viewClient.adding_date) : fmtDate(viewClient.created_at)} />
               <Row label="Amount" value={fmtMoney(viewClient.amount)} />
               <Row label="Installments" value={viewClient.installments != null ? String(viewClient.installments) : '—'} />
               {viewClient.notes && <Row label="Notes" value={viewClient.notes} />}
+
+              {/* Installment payment history */}
+              {viewClient.installments != null && viewClient.installments > 0 && (
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Installment Payments</p>
+                    <button onClick={() => { setViewClient(null); openInstModal(viewClient) }} className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 rounded-lg hover:bg-amber-100 transition-colors">
+                      <Plus size={11} /> Add Payment
+                    </button>
+                  </div>
+                  {loadingInst ? (
+                    <p className="text-sm text-muted-foreground">Loading…</p>
+                  ) : installments.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No installment payments recorded yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {installments.map(inst => (
+                        <div key={inst.id} className="flex items-center gap-3 p-3 bg-muted/40 rounded-lg">
+                          <div className="w-7 h-7 rounded-full bg-amber-100 dark:bg-amber-950/40 flex items-center justify-center flex-shrink-0 text-xs font-bold text-amber-700 dark:text-amber-400">{inst.installment_no}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-foreground">{fmtMoney(inst.amount)}</div>
+                            <div className="text-xs text-muted-foreground">{fmtDate(inst.paid_date)}{inst.notes ? ` · ${inst.notes}` : ''}</div>
+                          </div>
+                          {inst.screenshot_url && (
+                            <button onClick={() => setLightbox(inst.screenshot_url!)} className="flex-shrink-0">
+                              <img src={inst.screenshot_url} className="w-8 h-8 object-cover rounded-lg border border-border" alt="receipt" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {(() => {
                 const urls = parseScreenshots(viewClient.screenshot_url)
                 return urls.length > 0 ? (
-                  <div>
+                  <div className="border-t border-border pt-4">
                     <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Payment Screenshots</p>
                     <div className="grid grid-cols-3 gap-2">
                       {urls.map((url, i) => (

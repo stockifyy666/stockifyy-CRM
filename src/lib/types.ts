@@ -75,12 +75,25 @@ export interface TechnicalCourseClient {
   subscription_type: string
   amount: number
   installments: number | null
+  adding_date: string | null
   notes: string | null
   screenshot_url: string | null
   added_by: string | null
   created_at: string
   updated_at: string
   added_by_profile?: Profile
+}
+
+export interface TechnicalInstallment {
+  id: string
+  client_id: string
+  installment_no: number
+  amount: number
+  paid_date: string
+  screenshot_url: string | null
+  notes: string | null
+  added_by: string | null
+  created_at: string
 }
 
 export interface Comment {

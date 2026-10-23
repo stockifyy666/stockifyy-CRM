@@ -43,13 +43,11 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
-    if (!q) return clients
-    return clients.filter(c =>
-      (c.name.toLowerCase().includes(q) ||
-      c.mobile.includes(q) ||
-      (c.client_code ?? '').toLowerCase().includes(q)) &&
-      (filterMonth ? c.created_at?.slice(0, 7) === filterMonth : isInRange(c.created_at, dateRange))
-    )
+    return clients.filter(c => {
+      const matchQ = !q || c.name.toLowerCase().includes(q) || c.mobile.includes(q) || (c.client_code ?? '').toLowerCase().includes(q)
+      const matchD = filterMonth ? c.created_at?.slice(0, 7) === filterMonth : isInRange(c.created_at, dateRange)
+      return matchQ && matchD
+    })
   }, [clients, search, filterMonth, dateRange])
 
   function set(k: string, v: string) { setForm(f => ({ ...f, [k]: v })) }

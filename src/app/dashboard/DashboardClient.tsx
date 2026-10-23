@@ -13,6 +13,7 @@ type SectionTab  = 'overall' | 'customers' | 'advisory' | 'portfolio' | 'technic
 interface PeriodData { customers: any[]; advisory: any[]; portfolio: any[]; technical: any[] }
 interface Props {
   allCustomers: any[]; allAdvisory: any[]; allPortfolio: any[]; allTechnical: any[]
+  allTechInstallments: any[]
   todayAll: PeriodData; weekAll: PeriodData; monthAll: PeriodData
 }
 
@@ -132,7 +133,7 @@ const SECTION_TABS: { key: SectionTab; label: string; viewHref: string }[] = [
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function DashboardClient({
-  allCustomers, allAdvisory, allPortfolio, allTechnical,
+  allCustomers, allAdvisory, allPortfolio, allTechnical, allTechInstallments,
   todayAll, weekAll, monthAll,
 }: Props) {
   // Use PKT (UTC+5) for date strings so "today" matches DB timestamps
@@ -164,7 +165,9 @@ export default function DashboardClient({
       } else if (section === 'portfolio') {
         amount = allPortfolio.filter(c => c.created_at?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
       } else if (section === 'technical') {
-        amount = allTechnical.filter(c => c.created_at?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
+        amount =
+          allTechnical.filter(c => (c.adding_date ?? c.created_at)?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0) +
+          allTechInstallments.filter(i => i.paid_date === day).reduce((s: number, i: any) => s + (i.amount ?? 0), 0)
       } else if (section === 'customers') {
         amount = allCustomers.filter(c => (c.subscription_start ?? c.created_at)?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
       } else {
@@ -173,11 +176,12 @@ export default function DashboardClient({
           allCustomers.filter(c => (c.subscription_start ?? c.created_at)?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0) +
           allAdvisory.filter(c  => (c.adding_date ?? c.created_at)?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0) +
           allPortfolio.filter(c => c.created_at?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0) +
-          allTechnical.filter(c => c.created_at?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0)
+          allTechnical.filter(c => (c.adding_date ?? c.created_at)?.slice(0, 10) === day).reduce((s: number, c: any) => s + (c.amount ?? 0), 0) +
+          allTechInstallments.filter(i => i.paid_date === day).reduce((s: number, i: any) => s + (i.amount ?? 0), 0)
       }
       return { day, amount, isToday }
     })
-  }, [section, allCustomers, allAdvisory, allPortfolio, allTechnical, todayStr])
+  }, [section, allCustomers, allAdvisory, allPortfolio, allTechnical, allTechInstallments, todayStr])
 
   const maxAmt = Math.max(...liveChartData.map(d => d.amount), 1)
 
@@ -192,7 +196,7 @@ export default function DashboardClient({
     allPortfolio.filter(c => inRange(c.created_at, range)),
     [allPortfolio, range])
   const filtTech = useMemo(() =>
-    allTechnical.filter(c => inRange(c.created_at, range)),
+    allTechnical.filter(c => inRange(c.adding_date ?? c.created_at, range)),
     [allTechnical, range])
 
   // ── Today sub-totals (for "This Month" mode cards) ───────────────────────
@@ -206,8 +210,11 @@ export default function DashboardClient({
     allPortfolio.filter(c => c.created_at?.slice(0, 10) === todayStr),
     [allPortfolio, todayStr])
   const todayTech = useMemo(() =>
-    allTechnical.filter(c => c.created_at?.slice(0, 10) === todayStr),
+    allTechnical.filter(c => (c.adding_date ?? c.created_at)?.slice(0, 10) === todayStr),
     [allTechnical, todayStr])
+  const todayTechInstAmt = useMemo(() =>
+    allTechInstallments.filter(i => i.paid_date === todayStr).reduce((s: number, i: any) => s + (i.amount ?? 0), 0),
+    [allTechInstallments, todayStr])
 
   // ── Month sub-totals ─────────────────────────────────────────────────────
   const monthCusts = useMemo(() =>
@@ -220,8 +227,14 @@ export default function DashboardClient({
     allPortfolio.filter(c => c.created_at?.slice(0, 7) === monthStr),
     [allPortfolio, monthStr])
   const monthTech = useMemo(() =>
-    allTechnical.filter(c => c.created_at?.slice(0, 7) === monthStr),
+    allTechnical.filter(c => (c.adding_date ?? c.created_at)?.slice(0, 7) === monthStr),
     [allTechnical, monthStr])
+  const monthTechInstAmt = useMemo(() =>
+    allTechInstallments.filter(i => i.paid_date?.slice(0, 7) === monthStr).reduce((s: number, i: any) => s + (i.amount ?? 0), 0),
+    [allTechInstallments, monthStr])
+  const filtTechInstAmt = useMemo(() =>
+    allTechInstallments.filter(i => inRange(i.paid_date, range)).reduce((s: number, i: any) => s + (i.amount ?? 0), 0),
+    [allTechInstallments, range])
 
   // ── Real-time active / expiring (always customers only) ─────────────────
   const activeCount   = useMemo(() => allCustomers.filter(c => subStatus(c.subscription_end) === 'active').length,   [allCustomers])
@@ -237,13 +250,13 @@ export default function DashboardClient({
         const todayCount = todayCusts.length + todayAdv.length + todayPort.length + todayTech.length
         const monthCount = monthCusts.length + monthAdv.length + monthPort.length + monthTech.length
         return [
-          { label: "Today's Collections", value: fmtMoney(sumAmt(todayCusts) + sumAmt(todayAdv) + sumAmt(todayPort) + sumAmt(todayTech)), sub: `${todayCount} payment${todayCount !== 1 ? 's' : ''}`, icon: TrendingUp },
-          { label: 'This Month',          value: fmtMoney(sumAmt(monthCusts) + sumAmt(monthAdv) + sumAmt(monthPort) + sumAmt(monthTech)), sub: `${monthCount} payments`, icon: Calendar },
+          { label: "Today's Collections", value: fmtMoney(sumAmt(todayCusts) + sumAmt(todayAdv) + sumAmt(todayPort) + sumAmt(todayTech) + todayTechInstAmt), sub: `${todayCount} payment${todayCount !== 1 ? 's' : ''}`, icon: TrendingUp },
+          { label: 'This Month',          value: fmtMoney(sumAmt(monthCusts) + sumAmt(monthAdv) + sumAmt(monthPort) + sumAmt(monthTech) + monthTechInstAmt), sub: `${monthCount} payments`, icon: Calendar },
           { label: 'Active Subscribers',  value: String(activeCount),   sub: `of ${allCustomers.length} total`,  icon: Users },
           { label: 'Expiring Soon',       value: String(expiringCount), sub: 'within 2 days', icon: AlertTriangle },
         ]
       }
-      const totalAmt     = sumAmt(filtCusts) + sumAmt(filtAdv) + sumAmt(filtPort) + sumAmt(filtTech)
+      const totalAmt     = sumAmt(filtCusts) + sumAmt(filtAdv) + sumAmt(filtPort) + sumAmt(filtTech) + filtTechInstAmt
       const totalMembers = filtCusts.length  + filtAdv.length  + filtPort.length  + filtTech.length
       return [
         { label: 'Total Collections',  value: fmtMoney(totalAmt), sub: `all sections combined`,            icon: TrendingUp },
@@ -313,25 +326,26 @@ export default function DashboardClient({
 
     // ── Technical ────────────────────────────────────────────────────────
     if (section === 'technical') {
-      const avgAmt = filtTech.length > 0 ? Math.round(sumAmt(filtTech) / filtTech.length) : 0
+      const techTotal = sumAmt(filtTech) + filtTechInstAmt
+      const avgAmt = filtTech.length > 0 ? Math.round(techTotal / filtTech.length) : 0
       if (isThisMonth) {
         return [
-          { label: "Today's Collections", value: fmtMoney(sumAmt(todayTech)), sub: `${todayTech.length} client${todayTech.length !== 1 ? 's' : ''}`, icon: TrendingUp },
-          { label: 'This Month',          value: fmtMoney(sumAmt(monthTech)), sub: `${monthTech.length} clients`, icon: Calendar },
+          { label: "Today's Collections", value: fmtMoney(sumAmt(todayTech) + todayTechInstAmt), sub: `${todayTech.length} client${todayTech.length !== 1 ? 's' : ''}`, icon: TrendingUp },
+          { label: 'This Month',          value: fmtMoney(sumAmt(monthTech) + monthTechInstAmt), sub: `${monthTech.length} clients`, icon: Calendar },
           { label: 'Total Clients',       value: String(allTechnical.length), sub: 'all time',                    icon: Users },
           { label: 'Clients This Month',  value: String(monthTech.length),    sub: 'added this month',            icon: AlertTriangle },
         ]
       }
       return [
-        { label: 'Total Collections', value: fmtMoney(sumAmt(filtTech)), sub: 'in selected period',   icon: TrendingUp },
-        { label: 'Clients Added',     value: String(filtTech.length),    sub: 'in selected period',   icon: Calendar   },
-        { label: 'Total Clients',     value: String(allTechnical.length),sub: 'all time',              icon: Users      },
-        { label: 'Avg per Client',    value: fmtMoney(avgAmt),           sub: 'in selected period',   icon: AlertTriangle },
+        { label: 'Total Collections', value: fmtMoney(techTotal),         sub: 'in selected period',   icon: TrendingUp },
+        { label: 'Clients Added',     value: String(filtTech.length),      sub: 'in selected period',   icon: Calendar   },
+        { label: 'Total Clients',     value: String(allTechnical.length),  sub: 'all time',              icon: Users      },
+        { label: 'Avg per Client',    value: fmtMoney(avgAmt),             sub: 'in selected period',   icon: AlertTriangle },
       ]
     }
 
     return []
-  }, [section, period, filtCusts, filtAdv, filtPort, filtTech, todayCusts, todayAdv, todayPort, todayTech, monthCusts, monthAdv, monthPort, monthTech, activeCount, expiringCount, allCustomers, allAdvisory, allPortfolio, allTechnical])
+  }, [section, period, filtCusts, filtAdv, filtPort, filtTech, filtTechInstAmt, todayCusts, todayAdv, todayPort, todayTech, todayTechInstAmt, monthCusts, monthAdv, monthPort, monthTech, monthTechInstAmt, activeCount, expiringCount, allCustomers, allAdvisory, allPortfolio, allTechnical])
 
   // ── Breakdown (right column) ─────────────────────────────────────────────
   const displayBreakdown = useMemo(() => {

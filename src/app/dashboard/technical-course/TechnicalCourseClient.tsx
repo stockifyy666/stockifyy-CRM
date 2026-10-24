@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef } from 'react'
-import { Plus, X, BookOpen, Trash2, Pencil, Search, Upload, Eye, Image as ImageIcon, XCircle, CreditCard } from 'lucide-react'
+import { Plus, X, BookOpen, Trash2, Pencil, Search, Upload, Eye, Image as ImageIcon, XCircle, CreditCard, Download } from 'lucide-react'
 import DateRangeFilter, { type DateRange, isInRange } from '@/components/DateRangeFilter'
 import type { Profile, TechnicalCourseClient as TC, TechnicalInstallment } from '@/lib/types'
 import { fmtMoney, fmtDate, parseScreenshots } from '@/lib/utils'
@@ -53,6 +53,29 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
   const [instDragging, setInstDragging] = useState(false)
   const [instSaving, setInstSaving] = useState(false)
   const instFileRef = useRef<HTMLInputElement>(null)
+
+  async function exportExcel(data: TC[], label: string) {
+    const { utils, writeFile } = await import('xlsx')
+    const rows = data.map((c, i) => ({
+      '#': i + 1,
+      'Name': c.name,
+      'Client Code': c.client_code ?? '—',
+      'Mobile': c.mobile,
+      'Subscription Type': c.subscription_type,
+      'Amount (Rs)': c.amount,
+      'Installments': c.installments ?? 0,
+      'Payment Date': c.adding_date ?? c.created_at?.slice(0, 10) ?? '—',
+      'Notes': c.notes ?? '',
+    }))
+    const ws = utils.json_to_sheet(rows)
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 25 }, { wch: 14 }, { wch: 16 },
+      { wch: 28 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 30 },
+    ]
+    const wb = utils.book_new()
+    utils.book_append_sheet(wb, ws, label.slice(0, 31))
+    writeFile(wb, `technical-course-${label.toLowerCase().replace(/\s+/g, '-')}.xlsx`)
+  }
 
   const [confirmId, setConfirmId] = useState<string | null>(null)
   const [lightbox, setLightbox] = useState<string | null>(null)
@@ -226,10 +249,16 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
             <p className="text-sm text-muted-foreground">{clients.length} client{clients.length !== 1 ? 's' : ''}</p>
           </div>
         </div>
-        <button onClick={openAdd}
-          className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold rounded-lg transition-colors shadow-sm flex-shrink-0">
-          <Plus size={15} /> <span className="hidden sm:inline">Add Client</span><span className="sm:hidden">Add</span>
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={() => exportExcel(filtered, filtered.length === clients.length ? 'All Clients' : 'Filtered')}
+            className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors shadow-sm">
+            <Download size={15} /> <span className="hidden sm:inline">Download</span>
+          </button>
+          <button onClick={openAdd}
+            className="flex items-center gap-2 px-3 lg:px-4 py-2 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-semibold rounded-lg transition-colors shadow-sm">
+            <Plus size={15} /> <span className="hidden sm:inline">Add Client</span><span className="sm:hidden">Add</span>
+          </button>
+        </div>
       </div>
 
       <DateRangeFilter

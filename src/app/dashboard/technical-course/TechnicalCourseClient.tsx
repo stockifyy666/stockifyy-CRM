@@ -56,7 +56,7 @@ export default function TechnicalCourseClient({ clients: initial, profile }: { c
 
   async function exportExcel(data: TC[], label: string) {
     const { utils, writeFile } = await import('xlsx')
-    const rows = data.map((c, i) => ({
+    const rows = [...data].reverse().map((c, i) => ({
       '#': i + 1,
       'Name': c.name,
       'Client Code': c.client_code ?? '—',
